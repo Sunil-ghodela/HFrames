@@ -86,10 +86,24 @@ gh pr create --title "chore: release v0.2.0" --base main
 - Search existing issues before creating a new one
 - Include reproduction steps for bugs
 
+## AI-Assisted Contributions
+
+We welcome contributions that use AI tools (GitHub Copilot, Claude, ChatGPT, etc.). If you used AI to help write a PR, there is no need to disclose it — we review all code on its merits. However:
+
+- You are responsible for the correctness of any code you submit, regardless of how it was generated.
+- AI-generated tests must actually test meaningful behavior, not just assert truthy values.
+- Do not submit AI-generated code you don't understand. If you can't explain what a change does during review, it will be rejected.
+
+## Governance
+
+Hyperframes uses a **BDFL (Benevolent Dictator for Life)** governance model. The core maintainers at HeyGen have final say on the project's direction, API design, and what gets merged. This keeps the project focused and moving fast.
+
+Community input is valued and encouraged — open issues, propose RFCs, and discuss in PRs. But final decisions rest with the maintainers.
+
 ## Code of Conduct
 
 This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing, you agree that your contributions will be licensed under the project's license. See [LICENSE](LICENSE) for details.
