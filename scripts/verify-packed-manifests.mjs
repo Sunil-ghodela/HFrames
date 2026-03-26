@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const ROOT = join(import.meta.dirname, "..");
 const PACKAGES_DIR = join(ROOT, "packages");
@@ -29,12 +30,12 @@ function listWorkspaceRefs(pkg) {
 }
 
 function parsePackJson(output, workspace) {
-  const match = output.match(/(\[\s*{[\s\S]*}\s*])\s*$/);
-  if (!match) {
-    throw new Error(`Could not parse npm pack JSON output for ${workspace}`);
+  try {
+    const parsed = JSON.parse(output);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    throw new Error(`Could not parse pnpm pack JSON output for ${workspace}`);
   }
-
-  return JSON.parse(match[1]);
 }
 
 function main() {
@@ -44,10 +45,15 @@ function main() {
     );
     if (listWorkspaceRefs(sourcePackageJson).length === 0) continue;
 
-    const packOutput = execFileSync("npm", ["pack", "--json", "--workspace", workspace], {
-      cwd: ROOT,
-      encoding: "utf8",
-    });
+    const packDir = mkdtempSync(join(tmpdir(), "hyperframes-pack-"));
+    const packOutput = execFileSync(
+      "pnpm",
+      ["pack", "--json", "--pack-destination", packDir],
+      {
+        cwd: join(ROOT, workspace),
+        encoding: "utf8",
+      },
+    );
     const [{ filename }] = parsePackJson(packOutput, workspace);
 
     try {
@@ -65,7 +71,7 @@ function main() {
 
       console.log(`Verified ${workspace}: packed manifest is publish-safe.`);
     } finally {
-      rmSync(join(ROOT, filename), { force: true });
+      rmSync(packDir, { force: true, recursive: true });
     }
   }
 }

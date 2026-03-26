@@ -15,9 +15,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc --noEmit",
-    "prepack": "node ../../scripts/prepare-package-manifest-for-publish.mjs",
-    "postpack": "node ../../scripts/restore-package-manifest-after-pack.mjs"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.1",
