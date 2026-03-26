@@ -1,6 +1,6 @@
 {
   "name": "@hyperframes/studio",
-  "version": "0.1.3",
+  "version": "1.0.3",
   "files": [
     "src",
     "dist"
