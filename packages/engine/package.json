@@ -1,6 +1,6 @@
 {
   "name": "@hyperframes/engine",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Seekable web page to video rendering engine (Puppeteer + FFmpeg)",
   "type": "module",
   "main": "./src/index.ts",
