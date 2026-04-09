@@ -191,6 +191,66 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
     return findings;
   },
 
+  // root_composition_missing_data_start
+  ({ rootTag }) => {
+    const findings: HyperframeLintFinding[] = [];
+    if (!rootTag) return findings;
+    const compId = readAttr(rootTag.raw, "data-composition-id");
+    if (!compId) return findings;
+    const hasStart = readAttr(rootTag.raw, "data-start") !== null;
+    if (!hasStart) {
+      findings.push({
+        code: "root_composition_missing_data_start",
+        severity: "warning",
+        message: `Root composition "${compId}" is missing data-start. The runtime needs data-start="0" on the root element to begin playback.`,
+        fixHint: 'Add data-start="0" to the root composition element.',
+        snippet: truncateSnippet(rootTag.raw),
+      });
+    }
+    return findings;
+  },
+
+  // standalone_composition_wrapped_in_template
+  ({ rawSource, options }) => {
+    const findings: HyperframeLintFinding[] = [];
+    if (options.isSubComposition) return findings;
+    const trimmed = rawSource.trimStart().toLowerCase();
+    if (trimmed.startsWith("<template")) {
+      findings.push({
+        code: "standalone_composition_wrapped_in_template",
+        severity: "warning",
+        message:
+          "Root index.html is wrapped in a <template> tag. " +
+          "Only sub-compositions loaded via data-composition-src should use <template> wrappers. " +
+          "The runtime cannot play a standalone composition inside a template.",
+        fixHint:
+          "Remove the <template> wrapper. Use <!DOCTYPE html><html>...<div data-composition-id>...</div>...</html> instead.",
+      });
+    }
+    return findings;
+  },
+
+  // root_composition_missing_html_wrapper
+  ({ rawSource, options }) => {
+    const findings: HyperframeLintFinding[] = [];
+    if (options.isSubComposition) return findings;
+    const trimmed = rawSource.trimStart().toLowerCase();
+    const hasDoctype = trimmed.startsWith("<!doctype") || trimmed.startsWith("<html");
+    const hasComposition = rawSource.includes("data-composition-id");
+    if (hasComposition && !hasDoctype) {
+      findings.push({
+        code: "root_composition_missing_html_wrapper",
+        severity: "warning",
+        message:
+          "Composition is missing <!DOCTYPE html> and <html> wrapper. " +
+          "The bundler and preview expect a complete HTML document for index.html files.",
+        fixHint:
+          'Wrap the composition in <!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>...</body></html>.',
+      });
+    }
+    return findings;
+  },
+
   // requestanimationframe_in_composition
   ({ scripts }) => {
     const findings: HyperframeLintFinding[] = [];
