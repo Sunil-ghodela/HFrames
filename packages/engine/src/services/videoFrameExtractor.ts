@@ -208,12 +208,6 @@ export async function extractVideoFramesRange(
 }
 
 /**
- * Check if a video's color space indicates HDR content (BT.2020 primaries/matrix/transfer).
- * Re-exported from utils/hdr.ts for backward compatibility.
- */
-export const isHdrColorSpace = isHdrColorSpaceUtil;
-
-/**
  * Convert an SDR video to HDR color space (HLG / BT.2020) so it can be
  * composited alongside HDR content without looking washed out.
  *
@@ -309,7 +303,7 @@ export async function extractAllVideoFrames(
     }),
   );
 
-  const hasAnyHdr = videoColorSpaces.some(isHdrColorSpace);
+  const hasAnyHdr = videoColorSpaces.some(isHdrColorSpaceUtil);
   if (hasAnyHdr) {
     const convertDir = join(options.outputDir, "_hdr_normalized");
     mkdirSync(convertDir, { recursive: true });
@@ -317,7 +311,7 @@ export async function extractAllVideoFrames(
     for (let i = 0; i < resolvedVideos.length; i++) {
       if (signal?.aborted) break;
       const cs = videoColorSpaces[i] ?? null;
-      if (!isHdrColorSpace(cs)) {
+      if (!isHdrColorSpaceUtil(cs)) {
         // SDR video in a mixed timeline — convert to HDR color space
         const entry = resolvedVideos[i];
         if (!entry) continue;

@@ -56,7 +56,7 @@ import {
   createFrameReorderBuffer,
   type StreamingEncoder,
   convertHdrFrameToRgb48le,
-  isHdrColorSpace,
+  analyzeCompositionHdr,
 } from "@hyperframes/engine";
 import { join, dirname, resolve } from "path";
 import { randomUUID } from "crypto";
@@ -768,19 +768,15 @@ export async function executeRenderJob(
     }
 
     // ── HDR auto-detection ──────────────────────────────────────────────
-    // Check if any extracted video source has HDR color space. If so, the
-    // output automatically uses H.265 10-bit with HLG metadata. No flag needed.
+    // If any extracted video source has an HDR color space, the output
+    // automatically uses H.265 10-bit with the dominant transfer (PQ if any
+    // PQ source is present, otherwise HLG). No flag needed.
     let effectiveHdr: { transfer: HdrTransfer } | undefined;
     if (frameLookup) {
-      // Check extracted video metadata for HDR color spaces
-      for (const ext of extractionResult?.extracted ?? []) {
-        if (isHdrColorSpace(ext.metadata.colorSpace)) {
-          // Detect transfer: PQ or HLG
-          const cs = ext.metadata.colorSpace;
-          const transfer: HdrTransfer = cs?.colorTransfer === "smpte2084" ? "pq" : "hlg";
-          effectiveHdr = { transfer };
-          break;
-        }
+      const colorSpaces = (extractionResult?.extracted ?? []).map((ext) => ext.metadata.colorSpace);
+      const info = analyzeCompositionHdr(colorSpaces);
+      if (info.hasHdr && info.dominantTransfer) {
+        effectiveHdr = { transfer: info.dominantTransfer };
       }
     }
     if (effectiveHdr && outputFormat !== "mp4") {
