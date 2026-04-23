@@ -14,12 +14,19 @@ import { initCapture, captureScene, captureIncomingScene } from "./capture.js";
 
 declare const gsap: {
   timeline: (opts: Record<string, unknown>) => GsapTimeline;
+  to: (target: HTMLElement | string, vars: Record<string, unknown>) => unknown;
+  fromTo: (
+    target: HTMLElement | string,
+    from: Record<string, unknown>,
+    to: Record<string, unknown>,
+  ) => unknown;
 };
 
 interface GsapTimeline {
   paused: () => boolean;
   play: () => GsapTimeline;
   pause: () => GsapTimeline;
+  time: () => number;
   call: (fn: () => void, args: null, position: number) => GsapTimeline;
   to: (
     target: Record<string, unknown>,
@@ -271,25 +278,58 @@ export function init(config: HyperShaderConfig): GsapTimeline {
             const toTex = textures.get(toId);
             if (toTex) uploadTexture(gl, toTex, toCanvas);
 
-            document.querySelectorAll<HTMLElement>(".scene").forEach((s) => {
-              s.style.opacity = "0";
-            });
-            canvasEl.style.display = "block";
-            state.prog = prog;
-            state.fromId = fromId;
-            state.toId = toId;
-            state.progress = 0;
-            state.active = true;
+            // Guard: only apply transition-state DOM changes if the playhead
+            // is STILL inside this transition's [T, T+dur] window. Without
+            // this, a seek that crosses multiple transitions launches several
+            // async captures in parallel; each resolves ~80-200ms later and
+            // unconditionally calls querySelectorAll(".scene").opacity = "0"
+            // + canvas.display = "block" + state.active = true. The last one
+            // to resolve wins, so after seeking past a transition, state gets
+            // stuck pointing at the wrong transition and every scene is
+            // hidden — manifesting as the "scrub blanks until the next scene
+            // begins" bug. Checking tl.time() against the transition window
+            // keeps async capture completions from corrupting state the
+            // end-callback (at T+dur) or the next transition's start-callback
+            // has already set correctly.
+            const nowTime = tl.time();
+            const inWindow = nowTime >= T && nowTime < T + dur;
+            if (inWindow) {
+              document.querySelectorAll<HTMLElement>(".scene").forEach((s) => {
+                s.style.opacity = "0";
+              });
+              canvasEl.style.display = "block";
+              state.prog = prog;
+              state.fromId = fromId;
+              state.toId = toId;
+              state.progress = 0;
+              state.active = true;
+            }
 
             if (wasPlaying) tl.play();
           })
           .catch((e) => {
-            console.warn("[HyperShader] Capture failed, falling back to hard cut:", e);
-            document.querySelectorAll<HTMLElement>(".scene").forEach((s) => {
-              s.style.opacity = "0";
-            });
-            const scene = document.getElementById(toId);
-            if (scene) scene.style.opacity = "1";
+            // Graceful fallback for unavoidable capture failures. The most
+            // common cause is Safari's stricter canvas-taint rules combined
+            // with SVG-filter-based background images (e.g. inline
+            // `<feTurbulence>` grain data URLs): html2canvas returns a
+            // tainted canvas, then `gl.texImage2D` throws SecurityError
+            // with no framework opt-out (WebGL spec). In Chrome this path
+            // rarely fires, but when it does (CORS-less cross-origin
+            // images, iframe sandbox restrictions, etc.) the old hard-cut
+            // was jarring. A CSS crossfade is strictly better UX.
+            console.warn("[HyperShader] Capture failed, CSS crossfade fallback:", e);
+            const fromEl = document.getElementById(fromId);
+            const toEl = document.getElementById(toId);
+            if (fromEl && toEl) {
+              gsap.to(fromEl, { opacity: 0, duration: dur, ease });
+              gsap.fromTo(toEl, { opacity: 0 }, { opacity: 1, duration: dur, ease });
+            } else {
+              // Last-resort hard cut if elements are somehow missing
+              document.querySelectorAll<HTMLElement>(".scene").forEach((s) => {
+                s.style.opacity = "0";
+              });
+              if (toEl) toEl.style.opacity = "1";
+            }
             if (wasPlaying) tl.play();
           });
       },
