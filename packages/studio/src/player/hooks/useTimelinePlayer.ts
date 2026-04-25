@@ -304,7 +304,6 @@ function buildTimelineElementKey(params: {
   if (params.selector) return `${scope}:${params.selector}:${params.selectorIndex ?? 0}`;
   return `${scope}:${params.id}:${params.fallbackIndex}`;
 }
-
 function findTimelineDomNode(doc: Document, id: string): Element | null {
   return (
     doc.getElementById(id) ??
@@ -350,7 +349,6 @@ export function buildStandaloneRootTimelineElement(params: {
     sourceFile: compositionSrc,
   };
 }
-
 function normalizePreviewViewport(doc: Document, win: Window): void {
   if (doc.documentElement) {
     doc.documentElement.style.overflow = "hidden";
@@ -1196,6 +1194,9 @@ export function useTimelinePlayer() {
     setIsPlaying(false);
   }, [getAdapter, stopRAFLoop, setIsPlaying, stopReverseLoop]);
 
+  const togglePlayRef = useRef(togglePlay);
+  togglePlayRef.current = togglePlay;
+
   const refreshPlayer = useCallback(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
@@ -1304,8 +1305,6 @@ export function useTimelinePlayer() {
       stopRAFLoop();
       stopReverseLoop();
       if (probeIntervalRef.current) clearInterval(probeIntervalRef.current);
-      // Don't reset() on cleanup — preserve timeline elements across iframe refreshes
-      // to prevent blink. New data will replace old when the iframe reloads.
     };
   });
 
