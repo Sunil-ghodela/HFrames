@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatTime } from "./time";
+import { formatFrameTime, frameToSeconds, secondsToFrame, formatTime } from "./time";
 
 describe("formatTime", () => {
   it("formats zero seconds", () => {
@@ -53,5 +53,23 @@ describe("formatTime", () => {
 
   it("guards against Infinity", () => {
     expect(formatTime(Infinity)).toBe("0:00");
+  });
+});
+
+describe("frame helpers", () => {
+  it("converts seconds to frames at the Studio preview rate", () => {
+    expect(secondsToFrame(0)).toBe(0);
+    expect(secondsToFrame(1)).toBe(30);
+    expect(secondsToFrame(1.5)).toBe(45);
+  });
+
+  it("converts frames to seconds at the Studio preview rate", () => {
+    expect(frameToSeconds(0)).toBe(0);
+    expect(frameToSeconds(30)).toBe(1);
+    expect(frameToSeconds(45)).toBe(1.5);
+  });
+
+  it("formats current and total frame display", () => {
+    expect(formatFrameTime(1, 5)).toBe("30f / 150f");
   });
 });

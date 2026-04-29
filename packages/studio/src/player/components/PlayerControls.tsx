@@ -4,11 +4,18 @@ import {
   TIMELINE_TOGGLE_SHORTCUT_LABEL,
   getTimelineToggleTitle,
 } from "../../utils/timelineDiscovery";
-import { formatTime } from "../lib/time";
+import { formatFrameTime, frameToSeconds, formatTime } from "../lib/time";
 import { usePlayerStore, liveTime } from "../store/playerStore";
 
 const SPEED_OPTIONS = [0.25, 0.5, 1, 1.5, 2] as const;
 const SEEK_EDGE_SNAP_PX = 8;
+type TimeDisplayMode = "time" | "frame";
+const SHORTCUT_HINTS = [
+  { key: "J", label: "Play backward" },
+  { key: "K", label: "Stop playback" },
+  { key: "L", label: "Play forward" },
+  { key: "←/→", label: "Step one frame backward or forward" },
+] as const;
 
 export function resolveSeekPercent(clientX: number, rectLeft: number, rectWidth: number): number {
   if (!Number.isFinite(rectWidth) || rectWidth <= 0) return 0;
@@ -38,8 +45,12 @@ export const PlayerControls = memo(function PlayerControls({
   const duration = usePlayerStore((s) => s.duration);
   const timelineReady = usePlayerStore((s) => s.timelineReady);
   const playbackRate = usePlayerStore((s) => s.playbackRate);
+  const loopEnabled = usePlayerStore((s) => s.loopEnabled);
   const setPlaybackRate = usePlayerStore.getState().setPlaybackRate;
+  const setLoopEnabled = usePlayerStore.getState().setLoopEnabled;
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [timeDisplayMode, setTimeDisplayMode] = useState<TimeDisplayMode>("time");
+  const [jumpFrame, setJumpFrame] = useState("");
 
   const progressFillRef = useRef<HTMLDivElement>(null);
   const progressThumbRef = useRef<HTMLDivElement>(null);
@@ -49,6 +60,8 @@ export const PlayerControls = memo(function PlayerControls({
   const speedMenuContainerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
   const currentTimeRef = useRef(0);
+  const timeDisplayModeRef = useRef(timeDisplayMode);
+  timeDisplayModeRef.current = timeDisplayMode;
 
   const durationRef = useRef(duration);
   durationRef.current = duration;
@@ -59,7 +72,10 @@ export const PlayerControls = memo(function PlayerControls({
       const pct = dur > 0 ? Math.min(100, (t / dur) * 100) : 0;
       if (progressFillRef.current) progressFillRef.current.style.width = `${pct}%`;
       if (progressThumbRef.current) progressThumbRef.current.style.left = `${pct}%`;
-      if (timeDisplayRef.current) timeDisplayRef.current.textContent = formatTime(t);
+      if (timeDisplayRef.current) {
+        timeDisplayRef.current.textContent =
+          timeDisplayModeRef.current === "frame" ? formatFrameTime(t, dur) : formatTime(t);
+      }
       if (sliderRef.current) sliderRef.current.setAttribute("aria-valuenow", String(Math.round(t)));
     };
     const unsub = liveTime.subscribe(updateProgress);
@@ -81,6 +97,13 @@ export const PlayerControls = memo(function PlayerControls({
       clearInterval(interval);
     };
   });
+
+  useEffect(() => {
+    if (!timeDisplayRef.current) return;
+    const t = currentTimeRef.current;
+    timeDisplayRef.current.textContent =
+      timeDisplayMode === "frame" ? formatFrameTime(t, duration) : formatTime(t);
+  }, [duration, timeDisplayMode]);
 
   useEffect(() => {
     if (!showSpeedMenu) return;
@@ -190,21 +213,44 @@ export const PlayerControls = memo(function PlayerControls({
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (!timelineReady || duration <= 0) return;
-      const step = e.shiftKey ? 5 : 1;
+      const step = e.shiftKey ? 10 : 1;
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        onSeek(Math.max(0, currentTimeRef.current - step));
+        onSeek(Math.max(0, currentTimeRef.current - frameToSeconds(step)));
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        onSeek(Math.min(duration, currentTimeRef.current + step));
+        onSeek(Math.min(duration, currentTimeRef.current + frameToSeconds(step)));
       }
     },
     [timelineReady, duration, onSeek],
   );
 
+  const commitJumpFrame = useCallback(() => {
+    const frame = Number.parseInt(jumpFrame, 10);
+    if (!Number.isFinite(frame) || duration <= 0) return;
+    onSeek(Math.min(duration, frameToSeconds(Math.max(0, frame))));
+  }, [duration, jumpFrame, onSeek]);
+
+  const handleJumpSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      commitJumpFrame();
+    },
+    [commitJumpFrame],
+  );
+
+  const handleJumpKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      commitJumpFrame();
+    },
+    [commitJumpFrame],
+  );
+
   return (
     <div
-      className="px-4 py-2 flex items-center gap-3"
+      className="px-4 py-2 flex flex-wrap items-center gap-x-2 gap-y-1"
       style={{
         borderTop: "1px solid rgba(255,255,255,0.04)",
         // Add iOS safe-area inset so Safari's bottom URL bar doesn't occlude
@@ -236,12 +282,16 @@ export const PlayerControls = memo(function PlayerControls({
 
       {/* Time display */}
       <span
-        className="font-mono text-[11px] tabular-nums flex-shrink-0 min-w-[72px]"
+        className="font-mono text-[11px] tabular-nums flex-shrink-0 w-[118px]"
         style={{ color: "#A1A1AA" }}
       >
         <span ref={timeDisplayRef}>{formatTime(0)}</span>
-        <span style={{ color: "#3F3F46", margin: "0 2px" }}>/</span>
-        <span style={{ color: "#52525B" }}>{formatTime(duration)}</span>
+        {timeDisplayMode === "time" ? (
+          <>
+            <span style={{ color: "#3F3F46", margin: "0 2px" }}>/</span>
+            <span style={{ color: "#52525B" }}>{formatTime(duration)}</span>
+          </>
+        ) : null}
       </span>
 
       {/* Seek bar — teal progress fill */}
@@ -256,7 +306,7 @@ export const PlayerControls = memo(function PlayerControls({
         aria-valuemin={0}
         aria-valuemax={Math.round(duration)}
         aria-valuenow={0}
-        className="flex-1 h-6 flex items-center cursor-pointer group"
+        className="min-w-[96px] flex-1 h-6 flex items-center cursor-pointer group"
         // `touch-action: none` tells the browser we're handling every
         // pointer gesture on this element ourselves. Without it, iOS
         // Safari consumes horizontal swipes for its own swipe-back-to-
@@ -292,7 +342,7 @@ export const PlayerControls = memo(function PlayerControls({
         <button
           type="button"
           onClick={() => setShowSpeedMenu((v) => !v)}
-          className="px-2 py-1 rounded-md text-[10px] font-mono tabular-nums transition-colors"
+          className="w-10 px-2 py-1 rounded-md text-[10px] font-mono tabular-nums transition-colors"
           style={{ color: "#71717A", background: "rgba(255,255,255,0.04)" }}
         >
           {playbackRate === 1 ? "1x" : `${playbackRate}x`}
@@ -327,6 +377,65 @@ export const PlayerControls = memo(function PlayerControls({
             ))}
           </div>
         )}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setLoopEnabled(!loopEnabled)}
+        className={`h-7 w-14 rounded-md border px-2 text-[10px] font-medium transition-colors ${
+          loopEnabled
+            ? "text-studio-accent bg-studio-accent/10 border-studio-accent/30"
+            : "border-neutral-700 text-neutral-400 hover:border-neutral-500 hover:bg-neutral-800"
+        }`}
+        title="Loop playback"
+        aria-label={loopEnabled ? "Disable loop playback" : "Enable loop playback"}
+        aria-pressed={loopEnabled}
+      >
+        Loop
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setTimeDisplayMode((mode) => (mode === "time" ? "frame" : "time"))}
+        className="h-7 w-14 rounded-md border border-neutral-700 px-2 text-[10px] font-mono text-neutral-300 transition-colors hover:border-neutral-500 hover:bg-neutral-800"
+        title="Toggle time/frame display"
+        aria-label="Toggle time and frame display"
+      >
+        {timeDisplayMode === "time" ? "m:ss" : "frames"}
+      </button>
+
+      <form
+        onSubmit={handleJumpSubmit}
+        className="hidden sm:flex flex-shrink-0 w-[58px] items-center"
+      >
+        <input
+          value={jumpFrame}
+          onChange={(e) => setJumpFrame(e.target.value)}
+          inputMode="numeric"
+          pattern="[0-9]*"
+          aria-label="Jump to frame"
+          placeholder="frame"
+          className="h-7 w-[58px] rounded-md border border-neutral-700 bg-neutral-900 px-2 text-[10px] font-mono tabular-nums text-neutral-200 outline-none transition-colors placeholder:text-neutral-600 focus:border-studio-accent/60"
+          onKeyDown={handleJumpKeyDown}
+          onBlur={commitJumpFrame}
+        />
+      </form>
+
+      <div
+        className="hidden lg:flex items-center gap-1 text-[9px] font-mono text-neutral-500"
+        aria-label="Playback shortcuts: J backward, K stop, L forward, arrows step one frame"
+      >
+        {SHORTCUT_HINTS.map((shortcut) => (
+          <span
+            key={shortcut.key}
+            className="group relative rounded border border-neutral-800 px-1 py-0.5"
+          >
+            {shortcut.key}
+            <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 font-sans text-[10px] text-neutral-200 shadow-lg group-hover:block">
+              {shortcut.label}
+            </span>
+          </span>
+        ))}
       </div>
 
       {/* Timeline toggle */}

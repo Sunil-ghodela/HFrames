@@ -7,6 +7,8 @@ import {
   type ClipManifestClip,
   mergeTimelineElementsPreservingDowngrades,
   resolveStandaloneRootCompositionSrc,
+  shouldIgnorePlaybackShortcutEvent,
+  shouldIgnorePlaybackShortcutTarget,
 } from "./useTimelinePlayer";
 
 function createDocument(markup: string): Document {
@@ -28,6 +30,26 @@ function createClip(overrides: Partial<ClipManifestClip>): ClipManifestClip {
     parentCompositionId: null,
     compositionSrc: null,
     assetUrl: null,
+    ...overrides,
+  };
+}
+
+function mockTargetMatching(selectorNeedle: string): EventTarget {
+  return {
+    closest: (selector: string) => (selector.includes(selectorNeedle) ? ({} as Element) : null),
+  } as unknown as EventTarget;
+}
+
+function mockKeyboardEvent(
+  code: string,
+  overrides: Partial<Pick<KeyboardEvent, "altKey" | "ctrlKey" | "metaKey" | "target">> = {},
+): Pick<KeyboardEvent, "altKey" | "ctrlKey" | "metaKey" | "code" | "target"> {
+  return {
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    code,
+    target: mockTargetMatching("[data-missing]"),
     ...overrides,
   };
 }
@@ -151,5 +173,62 @@ describe("mergeTimelineElementsPreservingDowngrades", () => {
         6,
       ),
     ).toEqual([{ id: "hero", tag: "div", start: 0, duration: 4, track: 0 }]);
+  });
+});
+
+describe("shouldIgnorePlaybackShortcutTarget", () => {
+  it("ignores focused toolbar buttons so Space can activate the button itself", () => {
+    expect(shouldIgnorePlaybackShortcutTarget(mockTargetMatching("button"))).toBe(true);
+  });
+
+  it("ignores the seek slider so ArrowRight reaches the slider key handler", () => {
+    expect(shouldIgnorePlaybackShortcutTarget(mockTargetMatching("[role='slider']"))).toBe(true);
+  });
+
+  it("allows non-interactive preview targets to use playback shortcuts", () => {
+    expect(shouldIgnorePlaybackShortcutTarget(mockTargetMatching("[data-missing]"))).toBe(false);
+  });
+});
+
+describe("shouldIgnorePlaybackShortcutEvent", () => {
+  it("ignores modified playback shortcuts so browser and app chords can handle them", () => {
+    expect(
+      shouldIgnorePlaybackShortcutEvent(mockKeyboardEvent("ArrowLeft", { altKey: true })),
+    ).toBe(true);
+    expect(shouldIgnorePlaybackShortcutEvent(mockKeyboardEvent("KeyK", { ctrlKey: true }))).toBe(
+      true,
+    );
+    expect(shouldIgnorePlaybackShortcutEvent(mockKeyboardEvent("KeyL", { metaKey: true }))).toBe(
+      true,
+    );
+  });
+
+  it("defers Arrow frame shortcuts while caption edit mode has selected words", () => {
+    const captionSelection = { isCaptionEditMode: true, selectedCaptionSegmentCount: 1 };
+
+    expect(
+      shouldIgnorePlaybackShortcutEvent(mockKeyboardEvent("ArrowLeft"), captionSelection),
+    ).toBe(true);
+    expect(
+      shouldIgnorePlaybackShortcutEvent(mockKeyboardEvent("ArrowRight"), captionSelection),
+    ).toBe(true);
+    expect(shouldIgnorePlaybackShortcutEvent(mockKeyboardEvent("KeyJ"), captionSelection)).toBe(
+      false,
+    );
+  });
+
+  it("allows Arrow frame shortcuts when captions are not selected", () => {
+    expect(
+      shouldIgnorePlaybackShortcutEvent(mockKeyboardEvent("ArrowRight"), {
+        isCaptionEditMode: true,
+        selectedCaptionSegmentCount: 0,
+      }),
+    ).toBe(false);
+    expect(
+      shouldIgnorePlaybackShortcutEvent(mockKeyboardEvent("ArrowRight"), {
+        isCaptionEditMode: false,
+        selectedCaptionSegmentCount: 1,
+      }),
+    ).toBe(false);
   });
 });

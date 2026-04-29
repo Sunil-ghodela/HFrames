@@ -1,6 +1,8 @@
 import { useRef, useCallback } from "react";
 import { usePlayerStore, liveTime, type TimelineElement } from "../store/playerStore";
 import { useMountEffect } from "../../hooks/useMountEffect";
+import { frameToSeconds, STUDIO_PREVIEW_FPS } from "../lib/time";
+import { useCaptionStore } from "../../captions/store";
 
 interface PlaybackAdapter {
   play: () => void;
@@ -103,6 +105,64 @@ function applyMediaMetadataFromElement(entry: TimelineElement, el: Element): voi
   if (Number.isFinite(playbackRate) && playbackRate > 0) {
     entry.playbackRate = playbackRate;
   }
+}
+
+const SHUTTLE_SPEEDS = [1, 2, 4] as const;
+const PLAYBACK_FRAME_STEP_CODES = new Set(["ArrowLeft", "ArrowRight"]);
+const PLAYBACK_SHORTCUT_IGNORED_SELECTOR = [
+  "input",
+  "textarea",
+  "select",
+  "button",
+  "a[href]",
+  "[contenteditable='true']",
+  "[role='button']",
+  "[role='checkbox']",
+  "[role='combobox']",
+  "[role='menuitem']",
+  "[role='radio']",
+  "[role='slider']",
+  "[role='spinbutton']",
+  "[role='switch']",
+  "[role='textbox']",
+].join(",");
+
+export function shouldIgnorePlaybackShortcutTarget(target: EventTarget | null): boolean {
+  if (!target || typeof target !== "object") return false;
+  const candidate = target as { closest?: unknown };
+  if (typeof candidate.closest !== "function") return false;
+  return (
+    (candidate.closest as (selector: string) => Element | null).call(
+      target,
+      PLAYBACK_SHORTCUT_IGNORED_SELECTOR,
+    ) !== null
+  );
+}
+
+interface PlaybackShortcutCaptionState {
+  isCaptionEditMode: boolean;
+  selectedCaptionSegmentCount: number;
+}
+
+type PlaybackShortcutEvent = Pick<
+  KeyboardEvent,
+  "altKey" | "ctrlKey" | "metaKey" | "code" | "target"
+>;
+
+export function shouldIgnorePlaybackShortcutEvent(
+  event: PlaybackShortcutEvent,
+  captionState: PlaybackShortcutCaptionState = {
+    isCaptionEditMode: false,
+    selectedCaptionSegmentCount: 0,
+  },
+): boolean {
+  if (event.metaKey || event.ctrlKey || event.altKey) return true;
+  if (shouldIgnorePlaybackShortcutTarget(event.target)) return true;
+  return (
+    PLAYBACK_FRAME_STEP_CODES.has(event.code) &&
+    captionState.isCaptionEditMode &&
+    captionState.selectedCaptionSegmentCount > 0
+  );
 }
 
 /**
@@ -452,6 +512,13 @@ export function useTimelinePlayer() {
   const probeIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const pendingSeekRef = useRef<number | null>(null);
   const isRefreshingRef = useRef(false);
+  const reverseRafRef = useRef<number>(0);
+  const shuttleDirectionRef = useRef<"forward" | "backward" | null>(null);
+  const shuttleSpeedIndexRef = useRef(0);
+  const pressedCodesRef = useRef(new Set<string>());
+  const iframeShortcutCleanupRef = useRef<(() => void) | null>(null);
+  const playbackKeyDownRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  const playbackKeyUpRef = useRef<(e: KeyboardEvent) => void>(() => {});
 
   // ZERO store subscriptions — this hook never causes re-renders.
   // All reads use getState() (point-in-time), all writes use the stable setters.
@@ -510,6 +577,10 @@ export function useTimelinePlayer() {
     }
   }, []);
 
+  const stopReverseLoop = useCallback(() => {
+    cancelAnimationFrame(reverseRafRef.current);
+  }, []);
+
   const startRAFLoop = useCallback(() => {
     const tick = () => {
       const adapter = getAdapter();
@@ -518,6 +589,14 @@ export function useTimelinePlayer() {
         const dur = adapter.getDuration();
         liveTime.notify(time); // direct DOM updates, no React re-render
         if (time >= dur && !adapter.isPlaying()) {
+          if (usePlayerStore.getState().loopEnabled && dur > 0) {
+            adapter.seek(0);
+            liveTime.notify(0);
+            adapter.play();
+            setIsPlaying(true);
+            rafRef.current = requestAnimationFrame(tick);
+            return;
+          }
           setCurrentTime(time); // sync Zustand once at end
           setIsPlaying(false);
           cancelAnimationFrame(rafRef.current);
@@ -560,6 +639,8 @@ export function useTimelinePlayer() {
   }, []);
 
   const play = useCallback(() => {
+    stopRAFLoop();
+    stopReverseLoop();
     const adapter = getAdapter();
     if (!adapter) return;
     if (adapter.getTime() >= adapter.getDuration()) {
@@ -568,18 +649,68 @@ export function useTimelinePlayer() {
     unmutePreviewMedia(iframeRef.current);
     applyPlaybackRate(usePlayerStore.getState().playbackRate);
     adapter.play();
+    shuttleDirectionRef.current = "forward";
     setIsPlaying(true);
     startRAFLoop();
-  }, [getAdapter, setIsPlaying, startRAFLoop, applyPlaybackRate]);
+  }, [getAdapter, setIsPlaying, startRAFLoop, applyPlaybackRate, stopRAFLoop, stopReverseLoop]);
+
+  const playBackward = useCallback(
+    (rate: number) => {
+      stopRAFLoop();
+      stopReverseLoop();
+      const adapter = getAdapter();
+      if (!adapter) return;
+      const duration = Math.max(0, adapter.getDuration());
+      const initialTime = adapter.getTime() <= 0 && duration > 0 ? duration : adapter.getTime();
+      adapter.pause();
+      if (initialTime !== adapter.getTime()) adapter.seek(initialTime);
+      unmutePreviewMedia(iframeRef.current);
+      const speed = Math.max(0.1, Math.min(4, rate));
+      let startTime = initialTime;
+      let startedAt = performance.now();
+
+      const tick = (now: number) => {
+        const elapsed = ((now - startedAt) / 1000) * speed;
+        let nextTime = startTime - elapsed;
+        if (nextTime <= 0) {
+          if (usePlayerStore.getState().loopEnabled && duration > 0) {
+            startTime = duration;
+            startedAt = now;
+            nextTime = duration;
+          } else {
+            adapter.seek(0);
+            liveTime.notify(0);
+            setCurrentTime(0);
+            setIsPlaying(false);
+            shuttleDirectionRef.current = null;
+            reverseRafRef.current = 0;
+            return;
+          }
+        }
+        adapter.seek(Math.max(0, nextTime));
+        liveTime.notify(Math.max(0, nextTime));
+        setIsPlaying(true);
+        reverseRafRef.current = requestAnimationFrame(tick);
+      };
+
+      setIsPlaying(true);
+      shuttleDirectionRef.current = "backward";
+      reverseRafRef.current = requestAnimationFrame(tick);
+    },
+    [getAdapter, setCurrentTime, setIsPlaying, stopRAFLoop, stopReverseLoop],
+  );
 
   const pause = useCallback(() => {
+    stopReverseLoop();
     const adapter = getAdapter();
     if (!adapter) return;
     adapter.pause();
     setCurrentTime(adapter.getTime()); // sync store so Split/Delete have accurate time
     setIsPlaying(false);
+    shuttleDirectionRef.current = null;
+    shuttleSpeedIndexRef.current = 0;
     stopRAFLoop();
-  }, [getAdapter, setCurrentTime, setIsPlaying, stopRAFLoop]);
+  }, [getAdapter, setCurrentTime, setIsPlaying, stopRAFLoop, stopReverseLoop]);
 
   const togglePlay = useCallback(() => {
     if (usePlayerStore.getState().isPlaying) {
@@ -591,17 +722,135 @@ export function useTimelinePlayer() {
 
   const seek = useCallback(
     (time: number) => {
+      stopReverseLoop();
       const adapter = getAdapter();
       if (!adapter) return;
-      adapter.seek(time);
-      liveTime.notify(time); // Direct DOM updates (playhead, timecode, progress) — no re-render
-      setCurrentTime(time); // sync store so Split/Delete have accurate time
+      const duration = Math.max(0, adapter.getDuration());
+      const nextTime = Math.max(0, duration > 0 ? Math.min(duration, time) : time);
+      adapter.seek(nextTime);
+      liveTime.notify(nextTime); // Direct DOM updates (playhead, timecode, progress) — no re-render
+      setCurrentTime(nextTime); // sync store so Split/Delete have accurate time
       stopRAFLoop();
       // Only update store if state actually changes (avoids unnecessary re-renders)
       if (usePlayerStore.getState().isPlaying) setIsPlaying(false);
+      shuttleDirectionRef.current = null;
+      shuttleSpeedIndexRef.current = 0;
     },
-    [getAdapter, setCurrentTime, setIsPlaying, stopRAFLoop],
+    [getAdapter, setCurrentTime, setIsPlaying, stopRAFLoop, stopReverseLoop],
   );
+
+  const stepFrames = useCallback(
+    (deltaFrames: number) => {
+      const adapter = getAdapter();
+      const currentTime = adapter?.getTime() ?? usePlayerStore.getState().currentTime;
+      seek(currentTime + frameToSeconds(deltaFrames, STUDIO_PREVIEW_FPS));
+    },
+    [getAdapter, seek],
+  );
+
+  const shuttle = useCallback(
+    (direction: "forward" | "backward") => {
+      if (shuttleDirectionRef.current === direction) {
+        shuttleSpeedIndexRef.current = Math.min(
+          shuttleSpeedIndexRef.current + 1,
+          SHUTTLE_SPEEDS.length - 1,
+        );
+      } else {
+        shuttleSpeedIndexRef.current = 0;
+      }
+      const speed = SHUTTLE_SPEEDS[shuttleSpeedIndexRef.current];
+      usePlayerStore.getState().setPlaybackRate(speed);
+      if (direction === "forward") {
+        play();
+      } else {
+        playBackward(speed);
+      }
+    },
+    [play, playBackward],
+  );
+
+  const handlePlaybackKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      const captionState = useCaptionStore.getState();
+      if (
+        shouldIgnorePlaybackShortcutEvent(e, {
+          isCaptionEditMode: captionState.isEditMode,
+          selectedCaptionSegmentCount: captionState.selectedSegmentIds.size,
+        })
+      ) {
+        return;
+      }
+      pressedCodesRef.current.add(e.code);
+      if (e.code === "Space") {
+        e.preventDefault();
+        togglePlay();
+        return;
+      }
+      if (e.code === "ArrowLeft") {
+        e.preventDefault();
+        stepFrames(e.shiftKey ? -10 : -1);
+        return;
+      }
+      if (e.code === "ArrowRight") {
+        e.preventDefault();
+        stepFrames(e.shiftKey ? 10 : 1);
+        return;
+      }
+      if (e.repeat) return;
+      if (e.code === "KeyK") {
+        e.preventDefault();
+        pause();
+        return;
+      }
+      if (e.code === "KeyJ") {
+        e.preventDefault();
+        if (pressedCodesRef.current.has("KeyK")) {
+          stepFrames(-1);
+          return;
+        }
+        shuttle("backward");
+        return;
+      }
+      if (e.code === "KeyL") {
+        e.preventDefault();
+        if (pressedCodesRef.current.has("KeyK")) {
+          stepFrames(1);
+          return;
+        }
+        shuttle("forward");
+      }
+    },
+    [pause, shuttle, stepFrames, togglePlay],
+  );
+
+  const handlePlaybackKeyUp = useCallback((e: KeyboardEvent) => {
+    pressedCodesRef.current.delete(e.code);
+  }, []);
+  playbackKeyDownRef.current = handlePlaybackKeyDown;
+  playbackKeyUpRef.current = handlePlaybackKeyUp;
+
+  const attachIframeShortcutListeners = useCallback(() => {
+    iframeShortcutCleanupRef.current?.();
+    iframeShortcutCleanupRef.current = null;
+
+    const iframeWin = iframeRef.current?.contentWindow;
+    const iframeDoc = iframeRef.current?.contentDocument;
+    if (!iframeWin && !iframeDoc) return;
+
+    const handleIframeKeyDown = (e: KeyboardEvent) => playbackKeyDownRef.current(e);
+    const handleIframeKeyUp = (e: KeyboardEvent) => playbackKeyUpRef.current(e);
+    iframeWin?.addEventListener("keydown", handleIframeKeyDown, true);
+    iframeWin?.addEventListener("keyup", handleIframeKeyUp, true);
+    iframeDoc?.addEventListener("keydown", handleIframeKeyDown, true);
+    iframeDoc?.addEventListener("keyup", handleIframeKeyUp, true);
+    iframeShortcutCleanupRef.current = () => {
+      iframeWin?.removeEventListener("keydown", handleIframeKeyDown, true);
+      iframeWin?.removeEventListener("keyup", handleIframeKeyUp, true);
+      iframeDoc?.removeEventListener("keydown", handleIframeKeyDown, true);
+      iframeDoc?.removeEventListener("keyup", handleIframeKeyUp, true);
+    };
+  }, []);
 
   // Convert a runtime timeline message (from iframe postMessage) into TimelineElements
   const processTimelineMessage = useCallback(
@@ -906,6 +1155,7 @@ export function useTimelinePlayer() {
           if (doc && iframeWin) {
             normalizePreviewViewport(doc, iframeWin);
             autoHealMissingCompositionIds(doc);
+            attachIframeShortcutListeners();
           }
 
           // Try reading __clipManifest if already available (fast path)
@@ -972,6 +1222,7 @@ export function useTimelinePlayer() {
     processTimelineMessage,
     enrichMissingCompositions,
     syncTimelineElements,
+    attachIframeShortcutListeners,
   ]);
 
   /** Save the current playback time so the next onIframeLoad restores it. */
@@ -982,11 +1233,25 @@ export function useTimelinePlayer() {
       : (usePlayerStore.getState().currentTime ?? 0);
     isRefreshingRef.current = true;
     stopRAFLoop();
+    stopReverseLoop();
     setIsPlaying(false);
-  }, [getAdapter, stopRAFLoop, setIsPlaying]);
+  }, [getAdapter, stopRAFLoop, setIsPlaying, stopReverseLoop]);
 
   const togglePlayRef = useRef(togglePlay);
   togglePlayRef.current = togglePlay;
+
+  const refreshPlayer = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    saveSeekPosition();
+
+    const src = iframe.src;
+    const url = new URL(src, window.location.origin);
+    url.searchParams.set("_t", String(Date.now()));
+    iframe.src = url.toString();
+  }, [saveSeekPosition]);
+
   const getAdapterRef = useRef(getAdapter);
   getAdapterRef.current = getAdapter;
   const processTimelineMessageRef = useRef(processTimelineMessage);
@@ -995,12 +1260,8 @@ export function useTimelinePlayer() {
   enrichMissingCompositionsRef.current = enrichMissingCompositions;
 
   useMountEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "Space" && e.target === document.body) {
-        e.preventDefault();
-        togglePlayRef.current();
-      }
-    };
+    const handleWindowKeyDown = (e: KeyboardEvent) => playbackKeyDownRef.current(e);
+    const handleWindowKeyUp = (e: KeyboardEvent) => playbackKeyUpRef.current(e);
 
     // Listen for timeline messages from the iframe runtime.
     // The runtime sends this AFTER all external compositions load,
@@ -1073,14 +1334,19 @@ export function useTimelinePlayer() {
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleWindowKeyDown, true);
+    window.addEventListener("keyup", handleWindowKeyUp, true);
     window.addEventListener("message", handleMessage);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleWindowKeyDown, true);
+      window.removeEventListener("keyup", handleWindowKeyUp, true);
+      iframeShortcutCleanupRef.current?.();
+      iframeShortcutCleanupRef.current = null;
       window.removeEventListener("message", handleMessage);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       stopRAFLoop();
+      stopReverseLoop();
       if (probeIntervalRef.current) clearInterval(probeIntervalRef.current);
     };
   });
@@ -1088,9 +1354,10 @@ export function useTimelinePlayer() {
   /** Reset the player store (elements, duration, etc.) — call when switching sessions. */
   const resetPlayer = useCallback(() => {
     stopRAFLoop();
+    stopReverseLoop();
     if (probeIntervalRef.current) clearInterval(probeIntervalRef.current);
     usePlayerStore.getState().reset();
-  }, [stopRAFLoop]);
+  }, [stopRAFLoop, stopReverseLoop]);
 
   return {
     iframeRef,
@@ -1099,6 +1366,7 @@ export function useTimelinePlayer() {
     togglePlay,
     seek,
     onIframeLoad,
+    refreshPlayer,
     saveSeekPosition,
     resetPlayer,
   };
