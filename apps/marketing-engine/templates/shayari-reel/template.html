@@ -144,8 +144,8 @@
       }
       const cta = document.getElementById("cta");
       tl.to(cta, { opacity: 1, duration: 0.5 }, 9);
-      window.__timelines = window.__timelines || [];
-      window.__timelines.push({ id: "shayari-reel-main", timeline: tl });
+      window.__timelines = window.__timelines || {};
+      window.__timelines["shayari-reel"] = tl;
     </script>
   </body>
 </html>
