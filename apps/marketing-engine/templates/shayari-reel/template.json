@@ -1,0 +1,41 @@
+{
+  "name": "shayari-reel",
+  "version": "1.0.0",
+  "description": "Animated Hindi shayari reel with festive background",
+  "supportedAspects": ["9:16", "1:1", "16:9"],
+  "defaultDuration": 12,
+  "defaultFps": 30,
+  "dimensions": {
+    "9:16": { "width": 1080, "height": 1920 },
+    "1:1": { "width": 1080, "height": 1080 },
+    "16:9": { "width": 1920, "height": 1080 }
+  },
+  "slots": {
+    "shayariLines": {
+      "type": "string[]",
+      "min": 2,
+      "max": 4,
+      "required": true,
+      "description": "2-4 lines of Hindi shayari, displayed centered"
+    },
+    "background": {
+      "type": "asset",
+      "kind": "image",
+      "default": "@brand/craftlee-paper",
+      "description": "Background image asset; if a brand color, renders as solid color"
+    },
+    "festivalName": {
+      "type": "string",
+      "required": false,
+      "description": "Optional festival badge text (e.g. Holi, Diwali)"
+    },
+    "ctaText": {
+      "type": "string",
+      "default": "@brand/craftlee-cta"
+    },
+    "accentColor": {
+      "type": "color",
+      "default": "@brand/craftlee-saffron"
+    }
+  }
+}

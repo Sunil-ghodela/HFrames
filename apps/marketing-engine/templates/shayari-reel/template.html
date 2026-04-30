@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="hi">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #000;
+        font-family: "Mukta", sans-serif;
+      }
+      #stage {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: var(--bg-color, #1a1a1a);
+      }
+      .bg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0.6;
+      }
+      .lines {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 48px;
+        padding: 120px;
+        text-align: center;
+        z-index: 2;
+      }
+      .line {
+        font-size: 72px;
+        font-weight: 700;
+        color: #ffffff;
+        line-height: 1.4;
+        opacity: 0;
+        transform: translateY(24px);
+        text-shadow: 0 4px 32px rgba(0, 0, 0, 0.6);
+      }
+      .festival-badge {
+        position: absolute;
+        top: 80px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 16px 40px;
+        background: var(--accent-color, #ff9933);
+        color: #000;
+        font-weight: 800;
+        font-size: 36px;
+        border-radius: 999px;
+        opacity: 0;
+        z-index: 3;
+      }
+      .cta {
+        position: absolute;
+        bottom: 140px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 40px;
+        font-weight: 700;
+        color: var(--accent-color, #ff9933);
+        opacity: 0;
+        z-index: 3;
+        text-shadow: 0 2px 16px rgba(0, 0, 0, 0.6);
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="stage"
+      data-composition-id="shayari-reel"
+      data-start="0"
+      data-width="1080"
+      data-height="1920"
+      data-fps="30"
+      data-duration="12"
+    >
+      <img
+        id="bg"
+        class="bg clip"
+        data-start="0"
+        data-duration="12"
+        data-track-index="0"
+        data-slot="background"
+        src=""
+        alt=""
+      />
+      <div
+        id="festival-badge"
+        class="festival-badge clip"
+        data-start="0.2"
+        data-duration="11.6"
+        data-track-index="1"
+        data-slot="festivalName"
+      ></div>
+      <div
+        id="lines"
+        class="lines clip"
+        data-start="0"
+        data-duration="12"
+        data-track-index="2"
+        data-slot="shayariLines"
+      ></div>
+      <div
+        id="cta"
+        class="cta clip"
+        data-start="9"
+        data-duration="3"
+        data-track-index="3"
+        data-slot="ctaText"
+      ></div>
+    </div>
+    <script>
+      // GSAP timeline registered for HF seek-by-frame rendering.
+      const tl = gsap.timeline({ paused: true });
+      const lines = document.querySelectorAll(".line");
+      lines.forEach((line, i) => {
+        tl.to(
+          line,
+          { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" },
+          0.4 + i * 0.8,
+        );
+      });
+      const badge = document.getElementById("festival-badge");
+      if (badge && badge.textContent.trim()) {
+        tl.to(badge, { opacity: 1, duration: 0.5 }, 0.2);
+      }
+      const cta = document.getElementById("cta");
+      tl.to(cta, { opacity: 1, duration: 0.5 }, 9);
+      window.__timelines = window.__timelines || [];
+      window.__timelines.push({ id: "shayari-reel-main", timeline: tl });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "template": "shayari-reel",
+  "app": "craftlee",
+  "aspect": "9:16",
+  "output": { "name": "fixture-minimal", "formats": ["mp4"] },
+  "vars": {
+    "shayariLines": ["zindagi ek safar hai", "har mod par ek manzil"]
+  }
+}
