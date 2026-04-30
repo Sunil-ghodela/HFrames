@@ -26,6 +26,9 @@ docs/images/
 *.swp
 *.swo
 
+# Superpowers brainstorm sessions (mockups, server state)
+.superpowers/
+
 # Test
 coverage/
 .debug/
