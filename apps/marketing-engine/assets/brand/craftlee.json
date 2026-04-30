@@ -1,0 +1,16 @@
+{
+  "name": "CraftLee",
+  "colors": {
+    "saffron": "#FF9933",
+    "deep-saffron": "#E08600",
+    "ink": "#1A1A1A",
+    "paper": "#FFF8E7"
+  },
+  "fonts": {
+    "devanagari-display": "Mukta",
+    "latin-body": "Inter"
+  },
+  "cta": {
+    "default": "CraftLee se banayein →"
+  }
+}
