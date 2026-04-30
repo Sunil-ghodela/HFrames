@@ -1,0 +1,25 @@
+{
+  "name": "@marketing-engine/app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "make": "tsx src/cli.ts make",
+    "cli": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hyperframes/producer": "workspace:*",
+    "citty": "^0.1.6",
+    "happy-dom": "^20.9.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.10",
+    "tsx": "^4.21.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4"
+  }
+}
