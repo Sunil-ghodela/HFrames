@@ -117,7 +117,20 @@ export async function hydrateTemplate(
     }
 
     if (el.tagName === "IMG" || el.tagName === "VIDEO") {
-      el.setAttribute("src", String(value));
+      // Schema for "background"-style slots allows a brand color in place
+      // of an image URL. Render as solid color rather than a broken
+      // <img src="#FFF8E7">. Cast: happy-dom's Element doesn't expose
+      // .style, but IMG/VIDEO are HTMLElements at runtime.
+      const str = String(value);
+      if (/^#[0-9a-fA-F]{3,8}$/.test(str)) {
+        el.removeAttribute("src");
+        const styled = el as unknown as {
+          style: { setProperty: (k: string, v: string) => void };
+        };
+        styled.style.setProperty("background-color", str);
+      } else {
+        el.setAttribute("src", str);
+      }
       continue;
     }
 

@@ -135,7 +135,8 @@ export function App() {
         supportedAspects={(selected?.schema.supportedAspects ?? ["9:16"]) as AspectRatio[]}
         onSelectAspect={setAspect}
         onRender={onRender}
-        rendering={rendering || !validation.valid}
+        rendering={rendering}
+        disabled={!validation.valid}
         progress={progress}
       />
 

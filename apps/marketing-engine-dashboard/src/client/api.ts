@@ -49,13 +49,36 @@ export const api = {
 
 export function subscribeToRender(jobId: string, onEvent: (ev: RenderEvent) => void): () => void {
   const es = new EventSource(`/api/renders/${encodeURIComponent(jobId)}/events`);
+  let closed = false;
+  let gotTerminal = false;
+
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    es.close();
+  };
+
   es.onmessage = (e) => {
     try {
-      onEvent(JSON.parse(e.data) as RenderEvent);
+      const ev = JSON.parse(e.data) as RenderEvent;
+      if (ev.type === "done" || ev.type === "error") gotTerminal = true;
+      onEvent(ev);
     } catch {
       // ignore malformed
     }
   };
-  es.onerror = () => es.close();
-  return () => es.close();
+  es.onerror = () => {
+    // Network/proxy disconnect before server emitted a terminal event.
+    // Surface as a synthetic 'error' so the UI can reset its rendering
+    // state instead of getting stuck on "Rendering..." forever.
+    if (!gotTerminal) {
+      onEvent({
+        type: "error",
+        data: { message: "lost connection to render progress stream" },
+      });
+    }
+    close();
+  };
+
+  return close;
 }

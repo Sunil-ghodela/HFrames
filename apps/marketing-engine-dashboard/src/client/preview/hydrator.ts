@@ -73,7 +73,13 @@ export async function hydrateInDocument(
     }
 
     if (el.tagName === "IMG" || el.tagName === "VIDEO") {
-      el.setAttribute("src", String(value));
+      const str = String(value);
+      if (/^#[0-9a-fA-F]{3,8}$/.test(str)) {
+        el.removeAttribute("src");
+        if (el instanceof HTMLElement) el.style.backgroundColor = str;
+      } else {
+        el.setAttribute("src", str);
+      }
       continue;
     }
 

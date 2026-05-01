@@ -9,6 +9,7 @@ export interface HeaderProps {
   onSelectAspect: (a: AspectRatio) => void;
   onRender: () => void;
   rendering: boolean;
+  disabled?: boolean;
   progress?: RenderProgress | null;
 }
 
@@ -70,16 +71,17 @@ export function Header(props: HeaderProps) {
       <button
         type="button"
         onClick={props.onRender}
-        disabled={props.rendering}
+        disabled={props.rendering || props.disabled}
         style={{
           padding: "6px 14px",
-          background: props.rendering ? "#999" : "#6366f1",
+          background: props.rendering || props.disabled ? "#999" : "#6366f1",
           color: "white",
           border: "none",
           borderRadius: 4,
           fontWeight: 600,
-          cursor: props.rendering ? "wait" : "pointer",
+          cursor: props.rendering ? "wait" : props.disabled ? "not-allowed" : "pointer",
         }}
+        title={props.disabled && !props.rendering ? "fix slot errors first" : undefined}
       >
         {props.rendering ? "Rendering…" : "Render MP4"}
       </button>
