@@ -11,6 +11,10 @@ export interface HeaderProps {
   rendering: boolean;
   disabled?: boolean;
   progress?: RenderProgress | null;
+  /** Seconds elapsed since the in-flight render started; null when idle. */
+  elapsedSec?: number | null;
+  /** Rough estimate of total render duration in seconds (machine-dependent). */
+  etaSec?: number;
 }
 
 export function Header(props: HeaderProps) {
@@ -62,6 +66,12 @@ export function Header(props: HeaderProps) {
 
       <div style={{ flex: 1 }} />
 
+      {props.rendering && props.elapsedSec != null && (
+        <span style={{ fontSize: 11, color: "#666", fontFamily: "monospace" }}>
+          {fmtMinSec(props.elapsedSec)}
+          {props.etaSec ? ` / ~${fmtMinSec(props.etaSec)}` : ""}
+        </span>
+      )}
       {props.progress && (
         <span style={{ fontSize: 11, color: "#666" }}>
           {props.progress.phase} {Math.round(props.progress.progress * 100)}%
@@ -87,4 +97,11 @@ export function Header(props: HeaderProps) {
       </button>
     </div>
   );
+}
+
+function fmtMinSec(totalSec: number): string {
+  const s = Math.max(0, Math.floor(totalSec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}m ${String(r).padStart(2, "0")}s`;
 }

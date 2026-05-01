@@ -23,12 +23,28 @@ export function App() {
   const [aspect, setAspect] = useState<AspectRatio>("9:16");
   const [rendering, setRendering] = useState(false);
   const [progress, setProgress] = useState<RenderProgress | null>(null);
+  const [renderStartedAt, setRenderStartedAt] = useState<number | null>(null);
+  const [now, setNow] = useState<number>(() => Date.now());
   const [renderResult, setRenderResult] = useState<{ jobId: string; outputFile: string } | null>(
     null,
   );
   const [error, setError] = useState<string | null>(null);
   const [brand, setBrand] = useState<BrandJSON | null>(null);
   const [assets, setAssets] = useState<AssetEntry[]>([]);
+
+  // 1-second wall clock so the elapsed-time pill in the header ticks
+  // forward smoothly without re-rendering the whole tree more often.
+  useEffect(() => {
+    if (!rendering) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [rendering]);
+
+  const elapsedSec =
+    rendering && renderStartedAt != null ? Math.floor((now - renderStartedAt) / 1000) : null;
+  // Rough wall-time estimate for shayari-reel on this machine; refine
+  // once we have multiple completed renders to average over.
+  const ETA_SEC = 25 * 60;
 
   const selected = useMemo(
     () => templates.find((t) => t.schema.name === selectedName),
@@ -81,6 +97,8 @@ export function App() {
   async function onRender() {
     if (!selected || !validation.valid) return;
     setRendering(true);
+    setRenderStartedAt(Date.now());
+    setNow(Date.now());
     setError(null);
     setProgress(null);
     try {
@@ -99,11 +117,13 @@ export function App() {
           setRenderResult({ jobId, outputFile: ev.data.outputFile });
           setRendering(false);
           setProgress(null);
+          setRenderStartedAt(null);
           cleanup();
         } else if (ev.type === "error") {
           setError(ev.data.message);
           setRendering(false);
           setProgress(null);
+          setRenderStartedAt(null);
           cleanup();
         }
       });
@@ -111,6 +131,7 @@ export function App() {
       setError(e instanceof Error ? e.message : String(e));
       setRendering(false);
       setProgress(null);
+      setRenderStartedAt(null);
     }
   }
 
@@ -138,6 +159,8 @@ export function App() {
         rendering={rendering}
         disabled={!validation.valid}
         progress={progress}
+        elapsedSec={elapsedSec}
+        etaSec={ETA_SEC}
       />
 
       {error && <div style={{ padding: 8, background: "#fee", color: "#900" }}>{error}</div>}
