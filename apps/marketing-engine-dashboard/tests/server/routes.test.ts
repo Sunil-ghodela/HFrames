@@ -19,3 +19,17 @@ describe("GET /api/templates", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("POST /api/renders", () => {
+  it("rejects malformed payloads (missing required fields) with 4xx/5xx", async () => {
+    const app = createApp();
+    const res = await app.fetch(
+      new Request("http://localhost/api/renders", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ template: "shayari-reel" }),
+      }),
+    );
+    expect([400, 422, 500]).toContain(res.status);
+  });
+});
