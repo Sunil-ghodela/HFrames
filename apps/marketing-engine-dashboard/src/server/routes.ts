@@ -147,13 +147,41 @@ export function createApp(): AppLike {
           const stream = new ReadableStream({
             start(controller) {
               const encoder = new TextEncoder();
+              let closed = false;
               const send = (ev: unknown) => {
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
+                if (closed) return;
+                try {
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
+                } catch {
+                  closed = true;
+                }
               };
+              const sendComment = (text: string) => {
+                if (closed) return;
+                try {
+                  controller.enqueue(encoder.encode(`: ${text}\n\n`));
+                } catch {
+                  closed = true;
+                }
+              };
+              // Bun.serve enforces a per-request idleTimeout (max 255s).
+              // During the renderer's compile + capture phases there can
+              // be tens of seconds with no progress events; without
+              // periodic traffic Bun closes the SSE socket and the
+              // client sees a 500 / "lost connection" error mid-render.
+              // Send an SSE comment heartbeat every 15s to keep the
+              // connection considered active.
+              const heartbeat = setInterval(() => sendComment("keepalive"), 15_000);
               const cleanup = runner.subscribe(jobId, (ev) => {
                 send(ev);
                 if (ev.type === "done" || ev.type === "error") {
-                  controller.close();
+                  clearInterval(heartbeat);
+                  closed = true;
+                  try {
+                    controller.close();
+                  } catch {
+                    // already closed
+                  }
                   cleanup();
                 }
               });
@@ -163,7 +191,13 @@ export function createApp(): AppLike {
                   type: "done",
                   data: { outputFile: result.outputPath, durationMs: result.durationMs },
                 });
-                controller.close();
+                clearInterval(heartbeat);
+                closed = true;
+                try {
+                  controller.close();
+                } catch {
+                  // already closed
+                }
                 cleanup();
               }
             },
