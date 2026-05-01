@@ -6,6 +6,22 @@ export interface ResolverContext {
   rootDir: string;
 }
 
+export interface BrandJSON {
+  name: string;
+  colors: Record<string, string>;
+  fonts: Record<string, string>;
+  cta?: { default?: string; [k: string]: string | undefined };
+}
+
+export async function loadBrand(name: string, ctx: ResolverContext): Promise<BrandJSON> {
+  const path = join(ctx.rootDir, "assets", "brand", `${name}.json`);
+  if (!existsSync(path)) {
+    throw new Error(`Brand kit not found: ${path}`);
+  }
+  const raw = await readFile(path, "utf8");
+  return JSON.parse(raw) as BrandJSON;
+}
+
 export function isAssetRef(value: unknown): value is string {
   return typeof value === "string" && /^@(brand|asset|font)\//.test(value);
 }
@@ -40,11 +56,7 @@ async function resolveBrandRef(rest: string, ctx: ResolverContext): Promise<stri
   }
   const app = rest.slice(0, dashIdx);
   const key = rest.slice(dashIdx + 1);
-  const brandPath = join(ctx.rootDir, "assets", "brand", `${app}.json`);
-  if (!existsSync(brandPath)) {
-    throw new Error(`Brand kit not found: ${brandPath}`);
-  }
-  const kit: unknown = JSON.parse(await readFile(brandPath, "utf8"));
+  const kit = await loadBrand(app, ctx);
   return lookupBrandKey(kit, key, app);
 }
 
