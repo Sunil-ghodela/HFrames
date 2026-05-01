@@ -4,7 +4,17 @@ import { Header } from "./header.tsx";
 import { SlotEditor } from "./slot-editor/index.tsx";
 import { RenderResult } from "./result/render-result.tsx";
 import { IframeHost } from "./preview/iframe-host.tsx";
-import type { TemplateListItem, AspectRatio, RenderProgress } from "../shared/types.ts";
+import type { BrandSwatch } from "./slot-editor/widgets/color-input.tsx";
+import { validateSlots } from "./slot-editor/validate.ts";
+import type {
+  TemplateListItem,
+  AspectRatio,
+  RenderProgress,
+  BrandJSON,
+  AssetEntry,
+} from "../shared/types.ts";
+
+const BRAND_NAME = "craftlee";
 
 export function App() {
   const [templates, setTemplates] = useState<TemplateListItem[]>([]);
@@ -17,6 +27,8 @@ export function App() {
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [brand, setBrand] = useState<BrandJSON | null>(null);
+  const [assets, setAssets] = useState<AssetEntry[]>([]);
 
   const selected = useMemo(
     () => templates.find((t) => t.schema.name === selectedName),
@@ -38,17 +50,43 @@ export function App() {
         }
       })
       .catch((e) => setError(String(e)));
+
+    api
+      .getBrand(BRAND_NAME)
+      .then(setBrand)
+      .catch(() => undefined);
+    api
+      .getAssets()
+      .then(setAssets)
+      .catch(() => undefined);
   }, []);
 
+  const brandSwatches = useMemo<Record<string, BrandSwatch>>(() => {
+    if (!brand) return {};
+    const out: Record<string, BrandSwatch> = {};
+    for (const [name, hex] of Object.entries(brand.colors)) {
+      out[name] = { hex, token: `@brand/${BRAND_NAME}-${name}` };
+    }
+    return out;
+  }, [brand]);
+
+  const validation = useMemo(
+    () =>
+      selected
+        ? validateSlots(selected.schema, slots)
+        : ({ valid: true, errors: {} } as ReturnType<typeof validateSlots>),
+    [selected, slots],
+  );
+
   async function onRender() {
-    if (!selected) return;
+    if (!selected || !validation.valid) return;
     setRendering(true);
     setError(null);
     setProgress(null);
     try {
       const { jobId } = await api.startRender({
         template: selected.schema.name,
-        app: "craftlee",
+        app: BRAND_NAME,
         aspect,
         vars: slots,
         output: { name: `dashboard-${Date.now()}`, formats: ["mp4"] },
@@ -97,7 +135,7 @@ export function App() {
         supportedAspects={(selected?.schema.supportedAspects ?? ["9:16"]) as AspectRatio[]}
         onSelectAspect={setAspect}
         onRender={onRender}
-        rendering={rendering}
+        rendering={rendering || !validation.valid}
         progress={progress}
       />
 
@@ -113,7 +151,15 @@ export function App() {
           }}
         >
           {selected ? (
-            <SlotEditor schema={selected.schema} value={slots} onChange={setSlots} />
+            <SlotEditor
+              schema={selected.schema}
+              value={slots}
+              onChange={setSlots}
+              brandSwatches={brandSwatches}
+              brandImageTokens={[]}
+              assets={assets}
+              errors={validation.errors}
+            />
           ) : (
             <p>Loading templates…</p>
           )}
@@ -137,7 +183,7 @@ export function App() {
           ) : selected ? (
             <IframeHost
               templateName={selected.schema.name}
-              brandName="craftlee"
+              brandName={BRAND_NAME}
               schema={selected.schema}
               vars={slots}
               aspect={aspect}
