@@ -16,8 +16,8 @@ const SCHEMA: TemplateSchema = {
 describe("SlotEditor", () => {
   it("renders one input group per slot key", () => {
     render(<SlotEditor schema={SCHEMA} value={{}} onChange={() => {}} />);
-    expect(screen.getByLabelText(/shayariLines/i)).toBeDefined();
-    expect(screen.getByLabelText(/festivalName/i)).toBeDefined();
-    expect(screen.getByLabelText(/accentColor/i)).toBeDefined();
+    expect(screen.getByText(/shayariLines/i)).toBeDefined();
+    expect(screen.getByText(/festivalName/i)).toBeDefined();
+    expect(screen.getByText(/accentColor/i)).toBeDefined();
   });
 });

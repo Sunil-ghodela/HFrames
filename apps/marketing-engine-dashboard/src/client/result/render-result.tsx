@@ -1,3 +1,5 @@
+import { api } from "../api.ts";
+
 export interface RenderResultProps {
   jobId: string;
   outputFile: string;
@@ -14,6 +16,14 @@ export function RenderResult({ jobId, outputFile, onRenderAgain }: RenderResultP
       />
       <div style={{ fontSize: 11, color: "#666" }}>{outputFile}</div>
       <div style={{ display: "flex", gap: 8 }}>
+        <button
+          type="button"
+          onClick={() => {
+            void api.openFolder(outputFile);
+          }}
+        >
+          Open folder
+        </button>
         <button type="button" onClick={onRenderAgain}>
           Render again
         </button>

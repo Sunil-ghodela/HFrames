@@ -5,8 +5,9 @@ import { parseJobSpec } from "@marketing-engine/app/src/jobs.ts";
 import { loadBrand } from "@marketing-engine/app/src/assets.ts";
 import { listAssets } from "@marketing-engine/app/src/asset-list.ts";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, dirname as pathDirname } from "node:path";
 import { readFile, stat } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { createRenderRunner, type RenderRunner } from "./render-runner.ts";
 import type { TemplateListItem, RenderRequest } from "../shared/types.ts";
 
@@ -53,6 +54,30 @@ export function createApp(): AppLike {
         const list = await listTemplates({ rootDir: ENGINE_ROOT });
         const payload: TemplateListItem[] = list.map((t) => ({ schema: t.schema }));
         return Response.json(payload);
+      }
+
+      if (method === "POST" && pathname === "/api/open-folder") {
+        let body: { file?: string };
+        try {
+          body = (await req.json()) as { file?: string };
+        } catch {
+          return new Response(JSON.stringify({ error: "invalid JSON body" }), {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        const file = body.file ?? "";
+        const outRoot = join(ENGINE_ROOT, "out") + "/";
+        if (!file || !file.startsWith(outRoot)) {
+          return new Response(JSON.stringify({ error: "invalid file" }), {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        const dir = pathDirname(file);
+        const cmd = process.platform === "darwin" ? "open" : "xdg-open";
+        spawn(cmd, [dir], { detached: true, stdio: "ignore" }).unref();
+        return new Response(null, { status: 204 });
       }
 
       if (method === "POST" && pathname === "/api/renders") {
