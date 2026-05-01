@@ -92,6 +92,14 @@ function lookupBrandKey(kit: unknown, key: string, app: string): string {
 
 async function resolveAssetFile(rest: string, ctx: ResolverContext): Promise<string> {
   // Search assets/{music,images,videos}/<rest>.<ext>
+  // First try `rest` as a relative path under assets/ — this is what the
+  // dashboard's listAssets returns (e.g. "sample-bg.png" or
+  // "images/holi.png"). Then fall back to the legacy lookup that searches
+  // assets/{music,images,videos}/ for templates that bake in
+  // @asset/<basename>.
+  const direct = join(ctx.rootDir, "assets", rest);
+  if (existsSync(direct)) return direct;
+
   const candidates = [
     join(ctx.rootDir, "assets", "music", rest),
     join(ctx.rootDir, "assets", "images", rest),
@@ -103,7 +111,7 @@ async function resolveAssetFile(rest: string, ctx: ResolverContext): Promise<str
       if (existsSync(p)) return p;
     }
   }
-  throw new Error(`@asset/${rest} not found in assets/{music,images,videos}/`);
+  throw new Error(`@asset/${rest} not found in assets/ or assets/{music,images,videos}/`);
 }
 
 async function resolveFontRef(rest: string, _ctx: ResolverContext): Promise<string> {

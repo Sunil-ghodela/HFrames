@@ -60,6 +60,13 @@ export async function hydrateTemplate(
   validateRequiredSlots(tpl.schema, job);
 
   const window = new Window();
+  // happy-dom 20.x's BrowserWindow doesn't pre-populate certain globals
+  // (SyntaxError, DOMException, etc.). Vitest's happy-dom environment
+  // uses GlobalWindow which does, so tests work; running through a Bun
+  // server (dashboard) hits the gap and throws meta-errors like "undefined
+  // is not a constructor (evaluating 'new this.window.SyntaxError(...)')"
+  // when the selector parser tries to throw.
+  injectWindowGlobals(window as unknown as Record<string, unknown>);
   const document = window.document;
   document.documentElement.innerHTML = stripDoctype(tpl.html);
 
@@ -165,6 +172,20 @@ function validateRequiredSlots(schema: TemplateSchema, job: JobSpec): void {
 async function maybeResolve(v: unknown, ctx: TemplateContext): Promise<string | null> {
   if (typeof v !== "string") return null;
   return resolveRef(v, ctx);
+}
+
+function injectWindowGlobals(window: Record<string, unknown>): void {
+  for (const name of [
+    "SyntaxError",
+    "TypeError",
+    "RangeError",
+    "ReferenceError",
+    "EvalError",
+    "URIError",
+    "Error",
+  ] as const) {
+    if (window[name] == null) window[name] = (globalThis as Record<string, unknown>)[name];
+  }
 }
 
 function stripDoctype(html: string): string {
