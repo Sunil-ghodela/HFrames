@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>preview</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #fff;
+      }
+      #stage-host {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage-host"></div>
+    <script type="module">
+      // The iframe waits for the host React app to post a 'load' event with
+      // { templateHtml, schema, brand, vars, aspect, duration }. We then
+      // splice templateHtml into <body> (replacing #stage-host) and run the
+      // client hydrator + asset resolver. Vite serves the hydrator/resolver
+      // source files at known dev URLs; prod bundling is post-MVP.
+
+      let state = null;
+
+      function postToHost(msg) {
+        window.parent.postMessage(msg, "*");
+      }
+
+      window.addEventListener("error", (ev) => {
+        postToHost({ type: "error", stage: "runtime", message: String(ev.message) });
+      });
+
+      window.addEventListener("unhandledrejection", (ev) => {
+        postToHost({
+          type: "error",
+          stage: "hydrate",
+          message: ev.reason instanceof Error ? ev.reason.message : String(ev.reason),
+        });
+      });
+
+      window.addEventListener("message", async (ev) => {
+        const msg = ev.data;
+        if (!msg || typeof msg !== "object") return;
+
+        if (msg.type === "load") {
+          state = {
+            templateHtml: msg.templateHtml,
+            schema: msg.schema,
+            brand: msg.brand,
+            brandName: msg.brandName ?? "craftlee",
+            vars: msg.vars ?? {},
+            aspect: msg.aspect,
+            duration: msg.duration,
+          };
+          await renderStage();
+          postToHost({ type: "ready" });
+        } else if (msg.type === "hydrate") {
+          if (!state) return;
+          state.vars = msg.vars ?? state.vars;
+          await renderStage();
+        }
+      });
+
+      async function renderStage() {
+        if (!state) return;
+
+        // Replace iframe body with the template HTML so its #stage and
+        // styles take effect. We extract the body content out of the
+        // template HTML — templates are full <html>/<body> documents.
+        const parser = new DOMParser();
+        const tplDoc = parser.parseFromString(state.templateHtml, "text/html");
+        // Clear and adopt children
+        document.body.innerHTML = "";
+        // Move <head> children (stylesheet links, font preconnects, scripts)
+        // into the iframe head once
+        if (!document.head.dataset.tplHydrated) {
+          for (const node of Array.from(tplDoc.head.children)) {
+            document.head.appendChild(node.cloneNode(true));
+          }
+          document.head.dataset.tplHydrated = "1";
+        }
+        for (const node of Array.from(tplDoc.body.children)) {
+          document.body.appendChild(node.cloneNode(true));
+        }
+
+        const { hydrateInDocument } = await import("/src/client/preview/hydrator.ts");
+        const { createClientResolver } = await import("/src/client/preview/asset-resolver.ts");
+
+        const resolve = createClientResolver({
+          brands: { [state.brandName]: state.brand },
+          assetUrl: (name) => `/api/assets/file?name=${encodeURIComponent(name)}`,
+        });
+
+        await hydrateInDocument(
+          document,
+          {
+            schema: state.schema,
+            vars: state.vars,
+            aspect: state.aspect,
+            duration: state.duration,
+          },
+          resolve,
+        );
+
+        const dur =
+          (window.__timelines && window.__timelines[0]?.totalDuration?.()) ?? state.duration ?? 12;
+        postToHost({ type: "duration", value: dur });
+      }
+    </script>
+  </body>
+</html>
