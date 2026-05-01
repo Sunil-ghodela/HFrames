@@ -21,7 +21,9 @@ declare module "@marketing-engine/app/src/templates-list.ts" {
 
 declare module "@marketing-engine/app/src/template.ts" {
   import type { TemplateSchema } from "../shared/types.ts";
+  import type { JobSpec } from "@marketing-engine/app/src/jobs.ts";
   export interface TemplateBundle {
+    name: string;
     schema: TemplateSchema;
     html: string;
     dir: string;
@@ -32,7 +34,7 @@ declare module "@marketing-engine/app/src/template.ts" {
   export function loadTemplate(name: string, ctx: TemplateContext): Promise<TemplateBundle>;
   export function hydrateTemplate(
     bundle: TemplateBundle,
-    slots: Record<string, unknown>,
+    job: JobSpec,
     ctx: TemplateContext,
   ): Promise<string>;
 }

@@ -3,6 +3,7 @@ import { api } from "./api.ts";
 import { Header } from "./header.tsx";
 import { SlotEditor } from "./slot-editor/index.tsx";
 import { RenderResult } from "./result/render-result.tsx";
+import { IframeHost } from "./preview/iframe-host.tsx";
 import type { TemplateListItem, AspectRatio } from "../shared/types.ts";
 
 export function App() {
@@ -115,10 +116,16 @@ export function App() {
               outputFile={renderResult.outputFile}
               onRenderAgain={() => setRenderResult(null)}
             />
+          ) : selected ? (
+            <IframeHost
+              templateName={selected.schema.name}
+              brandName="craftlee"
+              schema={selected.schema}
+              vars={slots}
+              aspect={aspect}
+            />
           ) : (
-            <p style={{ color: "#666" }}>
-              Click <strong>Render</strong> to produce an MP4.
-            </p>
+            <p style={{ color: "#666" }}>Loading…</p>
           )}
         </div>
       </div>

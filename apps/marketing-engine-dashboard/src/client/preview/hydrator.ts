@@ -24,9 +24,10 @@ export async function hydrateInDocument(
   if (!stage) {
     throw new Error(`Template missing #stage element`);
   }
-  const dims = (input.schema.dimensions as Record<string, { width: number; height: number }>)[
-    input.aspect
-  ];
+  const dimsAll = input.schema.dimensions as unknown as
+    | Record<string, { width: number; height: number }>
+    | undefined;
+  const dims = dimsAll?.[input.aspect];
   if (!dims) {
     throw new Error(`Template does not declare dimensions for aspect ${input.aspect}`);
   }

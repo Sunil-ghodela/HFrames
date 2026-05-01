@@ -2,9 +2,10 @@ import { listTemplates } from "@marketing-engine/app/src/templates-list.ts";
 import { loadTemplate, hydrateTemplate } from "@marketing-engine/app/src/template.ts";
 import { renderJob } from "@marketing-engine/app/src/render.ts";
 import { parseJobSpec } from "@marketing-engine/app/src/jobs.ts";
+import { loadBrand } from "@marketing-engine/app/src/assets.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createRenderRunner, type RenderRunner } from "./render-runner.ts";
 import type { TemplateListItem, RenderRequest } from "../shared/types.ts";
 
@@ -28,7 +29,7 @@ function buildRunner(): RenderRunner {
         vars: req.vars,
       });
       const bundle = await loadTemplate(job.template, { rootDir: ENGINE_ROOT });
-      const html = await hydrateTemplate(bundle, job.vars, { rootDir: ENGINE_ROOT });
+      const html = await hydrateTemplate(bundle, job, { rootDir: ENGINE_ROOT });
       return renderJob({ job, html, outDir: OUT_DIR, rootDir: ENGINE_ROOT, onProgress });
     },
   });
@@ -87,6 +88,29 @@ export function createApp(): AppLike {
       }
 
       if (method === "GET") {
+        const htmlMatch = pathname.match(/^\/api\/templates\/([^/]+)\/html$/);
+        if (htmlMatch) {
+          const name = decodeURIComponent(htmlMatch[1] as string);
+          const list = await listTemplates({ rootDir: ENGINE_ROOT });
+          const t = list.find((x) => x.schema.name === name);
+          if (!t) return new Response("not found", { status: 404 });
+          const html = await readFile(t.htmlPath, "utf8");
+          return new Response(html, {
+            headers: { "content-type": "text/html; charset=utf-8" },
+          });
+        }
+
+        const brandMatch = pathname.match(/^\/api\/brand\/([^/]+)$/);
+        if (brandMatch) {
+          const name = decodeURIComponent(brandMatch[1] as string);
+          try {
+            const brand = await loadBrand(name, { rootDir: ENGINE_ROOT });
+            return Response.json(brand);
+          } catch {
+            return new Response("not found", { status: 404 });
+          }
+        }
+
         const fileMatch = pathname.match(/^\/api\/renders\/([^/]+)\/file$/);
         if (fileMatch) {
           const jobId = decodeURIComponent(fileMatch[1] as string);
