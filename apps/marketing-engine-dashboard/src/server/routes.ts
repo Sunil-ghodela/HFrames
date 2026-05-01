@@ -185,12 +185,14 @@ export function createApp(): AppLike {
                   cleanup();
                 }
               });
-              const result = runner.getResult(jobId);
-              if (result) {
-                send({
-                  type: "done",
-                  data: { outputFile: result.outputPath, durationMs: result.durationMs },
-                });
+              // Replay terminal event if the runner finished (done OR error)
+              // before this subscriber attached. Without this, an early
+              // server-side error during the fire-and-forget render fires
+              // into an empty listener set and the client's SSE just hangs
+              // on heartbeats forever.
+              const finalEv = runner.getFinalEvent(jobId);
+              if (finalEv) {
+                send(finalEv);
                 clearInterval(heartbeat);
                 closed = true;
                 try {

@@ -14,12 +14,19 @@ export interface RenderRunnerDeps {
   ) => Promise<RenderRunResult>;
 }
 
+export type FinalRenderEvent =
+  | { type: "done"; data: { outputFile: string; durationMs: number } }
+  | { type: "error"; data: { message: string } };
+
 export interface RenderRunner {
   start(req: RenderRequest): { jobId: string };
   subscribe(jobId: string, listener: (ev: RenderEvent) => void): () => void;
   isBusy(): boolean;
   currentJobId(): string | null;
   getResult(jobId: string): RenderRunResult | undefined;
+  /** Returns the cached terminal event (done or error) if the job has
+   * already finished and emitted before any subscriber was attached. */
+  getFinalEvent(jobId: string): FinalRenderEvent | undefined;
 }
 
 export function createRenderRunner(deps: RenderRunnerDeps): RenderRunner {
@@ -27,6 +34,9 @@ export function createRenderRunner(deps: RenderRunnerDeps): RenderRunner {
   let currentId: string | null = null;
   const listeners = new Map<string, Set<(ev: RenderEvent) => void>>();
   const results = new Map<string, RenderRunResult>();
+  // Cache the final terminal event per jobId so a late SSE subscriber can
+  // replay done/error even if it attached after the runner already emitted.
+  const finalEvents = new Map<string, FinalRenderEvent>();
 
   function emit(jobId: string, ev: RenderEvent): void {
     const set = listeners.get(jobId);
@@ -50,13 +60,17 @@ export function createRenderRunner(deps: RenderRunnerDeps): RenderRunner {
               emit(jobId, { type: "progress", data: p });
             });
             results.set(jobId, result);
-            emit(jobId, {
+            const ev: FinalRenderEvent = {
               type: "done",
               data: { outputFile: result.outputPath, durationMs: result.durationMs },
-            });
+            };
+            finalEvents.set(jobId, ev);
+            emit(jobId, ev);
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            emit(jobId, { type: "error", data: { message } });
+            const ev: FinalRenderEvent = { type: "error", data: { message } };
+            finalEvents.set(jobId, ev);
+            emit(jobId, ev);
           } finally {
             busy = false;
             currentId = null;
@@ -87,6 +101,10 @@ export function createRenderRunner(deps: RenderRunnerDeps): RenderRunner {
 
     getResult(jobId) {
       return results.get(jobId);
+    },
+
+    getFinalEvent(jobId) {
+      return finalEvents.get(jobId);
     },
   };
 }
