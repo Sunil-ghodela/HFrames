@@ -3,6 +3,7 @@ import { loadTemplate, hydrateTemplate } from "@marketing-engine/app/src/templat
 import { renderJob } from "@marketing-engine/app/src/render.ts";
 import { parseJobSpec } from "@marketing-engine/app/src/jobs.ts";
 import { loadBrand } from "@marketing-engine/app/src/assets.ts";
+import { listAssets } from "@marketing-engine/app/src/asset-list.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { readFile, stat } from "node:fs/promises";
@@ -70,24 +71,87 @@ export function createApp(): AppLike {
             headers: { "content-type": "application/json" },
           });
         }
+        // Validate the JobSpec synchronously so 400/422 errors come back at
+        // POST time rather than via SSE; runner.start() then kicks off async.
         try {
-          const accepted = await runner.start(body);
-          const result = runner.getResult(accepted.jobId);
-          return Response.json({
-            jobId: accepted.jobId,
-            outputFile: result?.outputPath,
-            durationMs: result?.durationMs,
+          parseJobSpec({
+            template: body.template,
+            app: body.app,
+            aspect: body.aspect,
+            output: body.output,
+            vars: body.vars,
           });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           return new Response(JSON.stringify({ error: message }), {
-            status: 500,
+            status: 400,
             headers: { "content-type": "application/json" },
           });
+        }
+        const { jobId } = runner.start(body);
+        return Response.json({ jobId });
+      }
+
+      if (method === "GET" && pathname === "/api/assets") {
+        const assets = await listAssets({ rootDir: ENGINE_ROOT });
+        return Response.json(
+          assets.map((a) => ({ name: a.name, relPath: a.relPath, kind: a.kind })),
+        );
+      }
+
+      if (method === "GET" && pathname === "/api/assets/file") {
+        const name = url.searchParams.get("name");
+        if (!name) return new Response("missing name", { status: 400 });
+        if (name.includes("..") || name.startsWith("/")) {
+          return new Response("invalid name", { status: 400 });
+        }
+        const abs = join(ENGINE_ROOT, "assets", name);
+        try {
+          const s = await stat(abs);
+          if (!s.isFile()) return new Response("not found", { status: 404 });
+          return new Response(Bun.file(abs));
+        } catch {
+          return new Response("not found", { status: 404 });
         }
       }
 
       if (method === "GET") {
+        const eventsMatch = pathname.match(/^\/api\/renders\/([^/]+)\/events$/);
+        if (eventsMatch) {
+          const jobId = decodeURIComponent(eventsMatch[1] as string);
+          const stream = new ReadableStream({
+            start(controller) {
+              const encoder = new TextEncoder();
+              const send = (ev: unknown) => {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
+              };
+              const cleanup = runner.subscribe(jobId, (ev) => {
+                send(ev);
+                if (ev.type === "done" || ev.type === "error") {
+                  controller.close();
+                  cleanup();
+                }
+              });
+              const result = runner.getResult(jobId);
+              if (result) {
+                send({
+                  type: "done",
+                  data: { outputFile: result.outputPath, durationMs: result.durationMs },
+                });
+                controller.close();
+                cleanup();
+              }
+            },
+          });
+          return new Response(stream, {
+            headers: {
+              "content-type": "text/event-stream",
+              "cache-control": "no-cache",
+              connection: "keep-alive",
+            },
+          });
+        }
+
         const htmlMatch = pathname.match(/^\/api\/templates\/([^/]+)\/html$/);
         if (htmlMatch) {
           const name = decodeURIComponent(htmlMatch[1] as string);

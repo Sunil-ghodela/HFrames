@@ -4,6 +4,7 @@ import type {
   RenderJobAccepted,
   BrandJSON,
   AssetEntry,
+  RenderEvent,
 } from "../shared/types.ts";
 
 async function jsonFetch<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
@@ -45,3 +46,16 @@ export const api = {
     return `/api/renders/${encodeURIComponent(jobId)}/file`;
   },
 };
+
+export function subscribeToRender(jobId: string, onEvent: (ev: RenderEvent) => void): () => void {
+  const es = new EventSource(`/api/renders/${encodeURIComponent(jobId)}/events`);
+  es.onmessage = (e) => {
+    try {
+      onEvent(JSON.parse(e.data) as RenderEvent);
+    } catch {
+      // ignore malformed
+    }
+  };
+  es.onerror = () => es.close();
+  return () => es.close();
+}

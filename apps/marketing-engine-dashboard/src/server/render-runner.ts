@@ -15,7 +15,7 @@ export interface RenderRunnerDeps {
 }
 
 export interface RenderRunner {
-  start(req: RenderRequest): Promise<{ jobId: string }>;
+  start(req: RenderRequest): { jobId: string };
   subscribe(jobId: string, listener: (ev: RenderEvent) => void): () => void;
   isBusy(): boolean;
   currentJobId(): string | null;
@@ -35,30 +35,36 @@ export function createRenderRunner(deps: RenderRunnerDeps): RenderRunner {
   }
 
   return {
-    async start(req) {
+    start(req) {
       if (busy) throw new Error("render runner is busy");
       busy = true;
       const jobId = randomUUID();
       currentId = jobId;
 
-      try {
-        const result = await deps.runRender(req, (p) => {
-          emit(jobId, { type: "progress", data: p });
-        });
-        results.set(jobId, result);
-        emit(jobId, {
-          type: "done",
-          data: { outputFile: result.outputPath, durationMs: result.durationMs },
-        });
-        return { jobId };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        emit(jobId, { type: "error", data: { message } });
-        throw err;
-      } finally {
-        busy = false;
-        currentId = null;
-      }
+      // Defer the actual render to a microtask so callers have a chance to
+      // subscribe via subscribe(jobId, ...) before any events are emitted.
+      queueMicrotask(() => {
+        void (async () => {
+          try {
+            const result = await deps.runRender(req, (p) => {
+              emit(jobId, { type: "progress", data: p });
+            });
+            results.set(jobId, result);
+            emit(jobId, {
+              type: "done",
+              data: { outputFile: result.outputPath, durationMs: result.durationMs },
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            emit(jobId, { type: "error", data: { message } });
+          } finally {
+            busy = false;
+            currentId = null;
+          }
+        })();
+      });
+
+      return { jobId };
     },
 
     subscribe(jobId, listener) {

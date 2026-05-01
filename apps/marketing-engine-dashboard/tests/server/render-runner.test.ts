@@ -2,7 +2,15 @@ import { describe, it, expect } from "vitest";
 import { createRenderRunner } from "../../src/server/render-runner.ts";
 
 describe("RenderRunner", () => {
-  it("rejects a second start while busy with 409 semantics", async () => {
+  const REQ = {
+    template: "shayari-reel",
+    app: "craftlee",
+    aspect: "9:16" as const,
+    vars: { shayariLines: ["a", "b"] },
+    output: { name: "test", formats: ["mp4"] as ["mp4"] },
+  };
+
+  it("rejects a second start while busy", async () => {
     const runner = createRenderRunner({
       runRender: async () => {
         await new Promise((r) => setTimeout(r, 50));
@@ -10,23 +18,25 @@ describe("RenderRunner", () => {
       },
     });
 
-    const req = {
-      template: "shayari-reel",
-      app: "craftlee",
-      aspect: "9:16" as const,
-      vars: { shayariLines: ["a", "b"] },
-      output: { name: "test", formats: ["mp4"] as ["mp4"] },
-    };
+    const { jobId } = runner.start(REQ);
+    expect(jobId).toBeTruthy();
+    expect(runner.isBusy()).toBe(true);
 
-    const first = runner.start(req);
-    const second = await runner.start(req).catch((e) => e);
-    expect(second).toBeInstanceOf(Error);
-    expect((second as Error).message).toMatch(/busy/i);
+    expect(() => runner.start(REQ)).toThrow(/busy/i);
 
-    await first;
+    // Wait for the first render to complete via subscribe-to-done
+    await new Promise<void>((resolve) => {
+      const cleanup = runner.subscribe(jobId, (ev) => {
+        if (ev.type === "done" || ev.type === "error") {
+          cleanup();
+          resolve();
+        }
+      });
+    });
+    expect(runner.isBusy()).toBe(false);
   });
 
-  it("emits progress events through subscribe()", async () => {
+  it("emits progress and done events through subscribe()", async () => {
     const runner = createRenderRunner({
       runRender: async (_req, onProgress) => {
         onProgress?.({ phase: "preprocessing", progress: 0.1 });
@@ -37,19 +47,22 @@ describe("RenderRunner", () => {
     });
 
     const events: string[] = [];
+    const { jobId } = runner.start(REQ);
+    // start() schedules the actual render on a microtask, so subscribers
+    // attached synchronously after start() will see every event.
+    const cleanup = runner.subscribe(jobId, (ev) => events.push(ev.type));
 
-    const req = {
-      template: "shayari-reel",
-      app: "craftlee",
-      aspect: "9:16" as const,
-      vars: { shayariLines: ["a", "b"] },
-      output: { name: "test", formats: ["mp4"] as ["mp4"] },
-    };
-
-    const startPromise = runner.start(req);
-    const cleanup = runner.subscribe(runner.currentJobId()!, (ev) => events.push(ev.type));
-    await startPromise;
+    await new Promise<void>((resolve) => {
+      const inner = runner.subscribe(jobId, (ev) => {
+        if (ev.type === "done" || ev.type === "error") {
+          inner();
+          resolve();
+        }
+      });
+    });
     cleanup();
+
+    expect(events.filter((t) => t === "progress").length).toBe(3);
     expect(events).toContain("done");
   });
 });

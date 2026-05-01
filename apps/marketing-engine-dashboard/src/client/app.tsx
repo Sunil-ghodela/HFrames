@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { api } from "./api.ts";
+import { api, subscribeToRender } from "./api.ts";
 import { Header } from "./header.tsx";
 import { SlotEditor } from "./slot-editor/index.tsx";
 import { RenderResult } from "./result/render-result.tsx";
 import { IframeHost } from "./preview/iframe-host.tsx";
-import type { TemplateListItem, AspectRatio } from "../shared/types.ts";
+import type { TemplateListItem, AspectRatio, RenderProgress } from "../shared/types.ts";
 
 export function App() {
   const [templates, setTemplates] = useState<TemplateListItem[]>([]);
@@ -12,6 +12,7 @@ export function App() {
   const [slots, setSlots] = useState<Record<string, unknown>>({});
   const [aspect, setAspect] = useState<AspectRatio>("9:16");
   const [rendering, setRendering] = useState(false);
+  const [progress, setProgress] = useState<RenderProgress | null>(null);
   const [renderResult, setRenderResult] = useState<{ jobId: string; outputFile: string } | null>(
     null,
   );
@@ -43,19 +44,35 @@ export function App() {
     if (!selected) return;
     setRendering(true);
     setError(null);
+    setProgress(null);
     try {
-      const res = await api.startRender({
+      const { jobId } = await api.startRender({
         template: selected.schema.name,
         app: "craftlee",
         aspect,
         vars: slots,
         output: { name: `dashboard-${Date.now()}`, formats: ["mp4"] },
       });
-      if (res.outputFile) setRenderResult({ jobId: res.jobId, outputFile: res.outputFile });
+
+      const cleanup = subscribeToRender(jobId, (ev) => {
+        if (ev.type === "progress") {
+          setProgress(ev.data);
+        } else if (ev.type === "done") {
+          setRenderResult({ jobId, outputFile: ev.data.outputFile });
+          setRendering(false);
+          setProgress(null);
+          cleanup();
+        } else if (ev.type === "error") {
+          setError(ev.data.message);
+          setRendering(false);
+          setProgress(null);
+          cleanup();
+        }
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
       setRendering(false);
+      setProgress(null);
     }
   }
 
@@ -81,6 +98,7 @@ export function App() {
         onSelectAspect={setAspect}
         onRender={onRender}
         rendering={rendering}
+        progress={progress}
       />
 
       {error && <div style={{ padding: 8, background: "#fee", color: "#900" }}>{error}</div>}

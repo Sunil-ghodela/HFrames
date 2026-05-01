@@ -1,4 +1,4 @@
-import type { TemplateListItem, AspectRatio } from "../shared/types.ts";
+import type { TemplateListItem, AspectRatio, RenderProgress } from "../shared/types.ts";
 
 export interface HeaderProps {
   templates: TemplateListItem[];
@@ -9,6 +9,7 @@ export interface HeaderProps {
   onSelectAspect: (a: AspectRatio) => void;
   onRender: () => void;
   rendering: boolean;
+  progress?: RenderProgress | null;
 }
 
 export function Header(props: HeaderProps) {
@@ -59,6 +60,12 @@ export function Header(props: HeaderProps) {
       </div>
 
       <div style={{ flex: 1 }} />
+
+      {props.progress && (
+        <span style={{ fontSize: 11, color: "#666" }}>
+          {props.progress.phase} {Math.round(props.progress.progress * 100)}%
+        </span>
+      )}
 
       <button
         type="button"
