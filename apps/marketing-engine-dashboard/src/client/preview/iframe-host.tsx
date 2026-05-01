@@ -11,7 +11,7 @@ export interface IframeHostProps {
 }
 
 interface RuntimeMessage {
-  type: "mounted" | "ready" | "duration" | "error";
+  type: "mounted" | "ready" | "duration" | "error" | "log";
   value?: number;
   message?: string;
   stage?: string;
@@ -59,11 +59,27 @@ export function IframeHost(props: IframeHostProps) {
     const onMessage = (ev: MessageEvent) => {
       const msg = ev.data as RuntimeMessage | null;
       if (!msg || typeof msg !== "object") return;
+      // Forward iframe diagnostics to the parent console so we can
+      // see the runtime's progress without switching DevTools context.
+      if (
+        msg.type === "log" ||
+        msg.type === "error" ||
+        msg.type === "ready" ||
+        msg.type === "mounted" ||
+        msg.type === "duration"
+      ) {
+        // eslint-disable-next-line no-console
+        console.log(`[iframe ${msg.type}]`, msg);
+      }
       if (msg.type === "mounted") {
         iframeMounted = true;
         sendLoadIfReady();
       } else if (msg.type === "ready") {
         setReady(true);
+        // ready can arrive after the watchdog already set an error
+        // (Vite's first-load .ts bundling can take 5+ seconds). Clear
+        // it so the banner doesn't stay up over a working preview.
+        setError((prev) => (prev?.startsWith("Preview slow") ? null : prev));
         if (watchdogRef.current) window.clearTimeout(watchdogRef.current);
       } else if (msg.type === "error") {
         setError(msg.message ?? "preview error");
@@ -87,9 +103,13 @@ export function IframeHost(props: IframeHostProps) {
       sendLoadIfReady();
     })();
 
+    // Generous watchdog for dev mode — Vite's first bundling pass on the
+    // iframe's dynamic imports (hydrator.ts, asset-resolver.ts) can take
+    // several seconds on a cold start. The 'ready' handler clears any
+    // "Preview slow" state if/when it eventually arrives.
     watchdogRef.current = window.setTimeout(() => {
-      setError((prev) => prev ?? "Preview failed to start (5s watchdog)");
-    }, 5000);
+      setError((prev) => prev ?? "Preview slow to start (30s) — still trying");
+    }, 30000);
 
     return () => {
       cancelled = true;
