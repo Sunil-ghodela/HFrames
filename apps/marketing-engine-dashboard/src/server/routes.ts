@@ -4,6 +4,7 @@ import { renderJob } from "@marketing-engine/app/src/render.ts";
 import { parseJobSpec } from "@marketing-engine/app/src/jobs.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { stat } from "node:fs/promises";
 import { createRenderRunner, type RenderRunner } from "./render-runner.ts";
 import type { TemplateListItem, RenderRequest } from "../shared/types.ts";
 
@@ -82,6 +83,26 @@ export function createApp(): AppLike {
             status: 500,
             headers: { "content-type": "application/json" },
           });
+        }
+      }
+
+      if (method === "GET") {
+        const fileMatch = pathname.match(/^\/api\/renders\/([^/]+)\/file$/);
+        if (fileMatch) {
+          const jobId = decodeURIComponent(fileMatch[1] as string);
+          const result = runner.getResult(jobId);
+          if (!result) return new Response("not found", { status: 404 });
+          try {
+            const s = await stat(result.outputPath);
+            return new Response(Bun.file(result.outputPath), {
+              headers: {
+                "content-type": "video/mp4",
+                "content-length": String(s.size),
+              },
+            });
+          } catch {
+            return new Response("file not found", { status: 404 });
+          }
         }
       }
 
