@@ -11,7 +11,7 @@ export interface IframeHostProps {
 }
 
 interface RuntimeMessage {
-  type: "ready" | "duration" | "error";
+  type: "mounted" | "ready" | "duration" | "error";
   value?: number;
   message?: string;
   stage?: string;
@@ -24,15 +24,45 @@ export function IframeHost(props: IframeHostProps) {
   const [error, setError] = useState<string | null>(null);
   const watchdogRef = useRef<number | null>(null);
 
-  // Load template HTML + brand JSON, then post 'load' to iframe.
+  // Load template HTML + brand JSON, then post 'load' to iframe AFTER it
+  // signals 'mounted' (its message listener is attached). The mounted
+  // handshake removes the race where iframe.load fires before the
+  // module-script body runs.
   useEffect(() => {
     setReady(false);
     setError(null);
 
+    let cancelled = false;
+    let payload: {
+      templateHtml: string;
+      brand: BrandJSON;
+    } | null = null;
+    let iframeMounted = false;
+
+    const sendLoadIfReady = () => {
+      if (cancelled || !iframeMounted || !payload) return;
+      ref.current?.contentWindow?.postMessage(
+        {
+          type: "load",
+          templateHtml: payload.templateHtml,
+          schema,
+          brand: payload.brand,
+          brandName,
+          vars,
+          aspect,
+          duration,
+        },
+        "*",
+      );
+    };
+
     const onMessage = (ev: MessageEvent) => {
       const msg = ev.data as RuntimeMessage | null;
       if (!msg || typeof msg !== "object") return;
-      if (msg.type === "ready") {
+      if (msg.type === "mounted") {
+        iframeMounted = true;
+        sendLoadIfReady();
+      } else if (msg.type === "ready") {
         setReady(true);
         if (watchdogRef.current) window.clearTimeout(watchdogRef.current);
       } else if (msg.type === "error") {
@@ -41,7 +71,6 @@ export function IframeHost(props: IframeHostProps) {
     };
     window.addEventListener("message", onMessage);
 
-    let cancelled = false;
     (async () => {
       const [htmlRes, brandRes] = await Promise.all([
         fetch(`/api/templates/${encodeURIComponent(templateName)}/html`),
@@ -54,15 +83,8 @@ export function IframeHost(props: IframeHostProps) {
       const templateHtml = await htmlRes.text();
       const brand = (await brandRes.json()) as BrandJSON;
       if (cancelled) return;
-
-      const post = () => {
-        ref.current?.contentWindow?.postMessage(
-          { type: "load", templateHtml, schema, brand, brandName, vars, aspect, duration },
-          "*",
-        );
-      };
-      if (ref.current?.contentDocument?.readyState === "complete") post();
-      else ref.current?.addEventListener("load", post, { once: true });
+      payload = { templateHtml, brand };
+      sendLoadIfReady();
     })();
 
     watchdogRef.current = window.setTimeout(() => {

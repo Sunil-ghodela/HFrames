@@ -44,6 +44,12 @@
         window.parent.postMessage(msg, "*");
       }
 
+      // Tell the parent we have our message listener attached. Without this,
+      // the parent might post 'load' before this module's script body has
+      // executed (module scripts are deferred), and the load message gets
+      // dropped on the floor.
+      postToHost({ type: "mounted" });
+
       window.addEventListener("error", (ev) => {
         postToHost({ type: "error", stage: "runtime", message: String(ev.message) });
       });
