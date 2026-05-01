@@ -11,12 +11,21 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: #fff;
+        background: #111;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
-      #stage-host {
-        width: 100%;
-        height: 100%;
-        display: block;
+      /*
+       * The template's #stage is sized to the reel's native dimensions
+       * (1080x1920 for 9:16, etc.). The iframe viewport is much smaller,
+       * so we apply a transform: scale() that fits #stage into the iframe
+       * while preserving aspect ratio. fitStage() runs after hydration and
+       * on resize.
+       */
+      #stage {
+        transform-origin: center center;
+        flex-shrink: 0;
       }
     </style>
   </head>
@@ -111,10 +120,24 @@
           resolve,
         );
 
+        fitStage();
+
         const dur =
           (window.__timelines && window.__timelines[0]?.totalDuration?.()) ?? state.duration ?? 12;
         postToHost({ type: "duration", value: dur });
       }
+
+      function fitStage() {
+        const stage = document.getElementById("stage");
+        if (!stage) return;
+        const sw = parseFloat(stage.dataset.width) || stage.offsetWidth || 1080;
+        const sh = parseFloat(stage.dataset.height) || stage.offsetHeight || 1920;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const scale = Math.min(vw / sw, vh / sh);
+        stage.style.transform = `scale(${scale})`;
+      }
+      window.addEventListener("resize", fitStage);
     </script>
   </body>
 </html>
