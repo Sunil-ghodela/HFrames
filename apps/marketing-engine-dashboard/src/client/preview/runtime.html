@@ -204,9 +204,15 @@
         // .line / #festival-badge / #cta which only exist (or have text)
         // after hydration. Re-running on every hydrate replaces the
         // previous timeline registration so it references the new nodes.
+        //
+        // Wrap each script in an IIFE so top-level `const`/`let`
+        // declarations (e.g. `const tl = gsap.timeline(...)` in
+        // shayari-reel) don't redeclare across re-executions and throw
+        // "Identifier 'tl' has already been declared". Templates that
+        // need to expose state put it on `window.__timelines` etc.
         for (const code of inlineBodyScripts) {
           const fresh = document.createElement("script");
-          fresh.textContent = code;
+          fresh.textContent = `(function(){\n${code}\n})();`;
           document.body.appendChild(fresh);
           fresh.remove();
         }
