@@ -11,7 +11,8 @@
     "skipLibCheck": true,
     "noEmit": true,
     "isolatedModules": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true
   },
   "include": ["src/server/**/*", "src/shared/**/*", "tests/server/**/*"]
 }
