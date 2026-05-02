@@ -17,7 +17,7 @@ export function AssetInput(props: AssetInputProps) {
           <img
             key={a.name}
             alt={a.name}
-            src={`/api/assets/file?name=${encodeURIComponent(a.name)}`}
+            src={`/api/reels/assets/file?name=${encodeURIComponent(a.name)}`}
             onClick={() => props.onChange(`@asset/${a.name}`)}
             style={{
               width: 56,

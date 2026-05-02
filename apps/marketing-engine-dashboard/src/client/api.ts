@@ -5,10 +5,19 @@ import type {
   BrandJSON,
   AssetEntry,
   RenderEvent,
+  RenderProgressPhase,
 } from "../shared/types.ts";
 
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem("jwt");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function jsonFetch<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-  const res = await fetch(input, init);
+  const res = await fetch(input, {
+    ...init,
+    headers: { ...authHeaders(), ...(init?.headers ?? {}) },
+  });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`HTTP ${res.status}: ${text}`);
@@ -18,67 +27,68 @@ async function jsonFetch<T>(input: RequestInfo, init?: RequestInit): Promise<T> 
 
 export const api = {
   async getTemplates(): Promise<TemplateListItem[]> {
-    return jsonFetch("/api/templates");
+    return jsonFetch("/api/reels/templates/");
   },
   async getBrand(name: string): Promise<BrandJSON> {
-    return jsonFetch(`/api/brand/${encodeURIComponent(name)}`);
+    return jsonFetch(`/api/reels/brands/${encodeURIComponent(name)}/`);
   },
   async getAssets(): Promise<AssetEntry[]> {
-    return jsonFetch("/api/assets");
+    return jsonFetch("/api/reels/assets/");
   },
-  async startRender(
-    req: RenderRequest,
-  ): Promise<RenderJobAccepted & { outputFile?: string; durationMs?: number }> {
-    return jsonFetch("/api/renders", {
+  async startRender(req: RenderRequest): Promise<RenderJobAccepted> {
+    const body = await jsonFetch<{ id: number }>("/api/reels/", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(req),
+      body: JSON.stringify({ spec_json: req }),
     });
-  },
-  async openFolder(file: string): Promise<void> {
-    await jsonFetch("/api/open-folder", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ file }),
-    });
+    return { jobId: String(body.id) };
   },
   renderFileUrl(jobId: string): string {
-    return `/api/renders/${encodeURIComponent(jobId)}/file`;
+    return `/api/reels/${encodeURIComponent(jobId)}/file/`;
   },
 };
 
 export function subscribeToRender(jobId: string, onEvent: (ev: RenderEvent) => void): () => void {
-  const es = new EventSource(`/api/renders/${encodeURIComponent(jobId)}/events`);
-  let closed = false;
-  let gotTerminal = false;
-
-  const close = () => {
-    if (closed) return;
-    closed = true;
-    es.close();
-  };
-
-  es.onmessage = (e) => {
+  let stopped = false;
+  const tick = async () => {
+    if (stopped) return;
     try {
-      const ev = JSON.parse(e.data) as RenderEvent;
-      if (ev.type === "done" || ev.type === "error") gotTerminal = true;
-      onEvent(ev);
-    } catch {
-      // ignore malformed
-    }
-  };
-  es.onerror = () => {
-    // Network/proxy disconnect before server emitted a terminal event.
-    // Surface as a synthetic 'error' so the UI can reset its rendering
-    // state instead of getting stuck on "Rendering..." forever.
-    if (!gotTerminal) {
-      onEvent({
-        type: "error",
-        data: { message: "lost connection to render progress stream" },
-      });
-    }
-    close();
-  };
+      const job = await jsonFetch<{
+        status: string;
+        phase: string;
+        progress: number;
+        video_url: string;
+        duration_ms: number;
+        error: string;
+      }>(`/api/reels/${encodeURIComponent(jobId)}/`);
 
-  return close;
+      if (job.status === "running" || job.status === "queued") {
+        onEvent({
+          type: "progress",
+          data: { phase: job.phase as RenderProgressPhase, progress: job.progress },
+        });
+      } else if (job.status === "done") {
+        onEvent({
+          type: "done",
+          data: { outputFile: job.video_url, durationMs: job.duration_ms },
+        });
+        stopped = true;
+        return;
+      } else if (job.status === "failed" || job.status === "cancelled") {
+        onEvent({
+          type: "error",
+          data: { message: job.error || `job ${job.status}` },
+        });
+        stopped = true;
+        return;
+      }
+    } catch {
+      // transient — just retry
+    }
+    if (!stopped) setTimeout(tick, 2000);
+  };
+  void tick();
+  return () => {
+    stopped = true;
+  };
 }

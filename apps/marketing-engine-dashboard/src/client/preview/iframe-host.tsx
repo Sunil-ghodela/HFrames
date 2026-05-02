@@ -89,8 +89,8 @@ export function IframeHost(props: IframeHostProps) {
 
     (async () => {
       const [htmlRes, brandRes] = await Promise.all([
-        fetch(`/api/templates/${encodeURIComponent(templateName)}/html`),
-        fetch(`/api/brand/${encodeURIComponent(brandName)}`),
+        fetch(`/api/reels/templates/${encodeURIComponent(templateName)}/html/`),
+        fetch(`/api/reels/brands/${encodeURIComponent(brandName)}/`),
       ]);
       if (!htmlRes.ok || !brandRes.ok) {
         setError("failed to load template/brand");
