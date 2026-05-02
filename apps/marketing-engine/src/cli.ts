@@ -11,6 +11,11 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const makeCmd = defineCommand({
   meta: { name: "make", description: "Render a single composition from a template or spec file" },
   args: {
+    spec: {
+      type: "positional",
+      description: "Path to a JobSpec JSON file (overrides other flags)",
+      required: false,
+    },
     kind: { type: "string", description: "Template name (e.g. shayari-reel)" },
     app: { type: "string", description: "App brand kit (craftlee | reelvoice)" },
     aspect: { type: "string", description: "Aspect ratio (9:16 | 1:1 | 16:9)" },
@@ -21,7 +26,11 @@ const makeCmd = defineCommand({
       description: "Slot var, repeatable: --var key=value or --var key=<JSON>",
       multiple: true,
     },
-    spec: { type: "string", description: "Path to a JobSpec JSON file (overrides other flags)" },
+    "json-progress": {
+      type: "boolean",
+      description: "Emit structured JSONL progress events on stdout; human logs go to stderr",
+      default: false,
+    },
   },
   async run({ args }) {
     let job: JobSpec;
@@ -37,8 +46,51 @@ const makeCmd = defineCommand({
     const html = await hydrateTemplate(tpl, job, { rootDir: ROOT });
 
     const outDir = join(ROOT, "out");
-    const result = await renderJob({ job, html, outDir, rootDir: ROOT });
 
+    if (args["json-progress"]) {
+      // Redirect human-readable logs to stderr so stdout stays clean for JSONL
+      const origLog = console.log;
+      console.log = (...a: unknown[]) => console.error(...a);
+      try {
+        process.stdout.write(
+          JSON.stringify({
+            type: "started",
+            jobId: `${job.output.name}-${Date.now()}`,
+            durationSeconds: job.duration ?? tpl.schema.defaultDuration,
+          }) + "\n",
+        );
+        const result = await renderJob({
+          job,
+          html,
+          outDir,
+          rootDir: ROOT,
+          onProgress: (ev) => {
+            process.stdout.write(
+              JSON.stringify({ type: "progress", phase: ev.phase, progress: ev.progress }) + "\n",
+            );
+          },
+        });
+        process.stdout.write(
+          JSON.stringify({
+            type: "done",
+            data: { outputPath: result.outputPath, durationMs: result.durationMs },
+          }) + "\n",
+        );
+      } catch (err) {
+        process.stdout.write(
+          JSON.stringify({
+            type: "error",
+            message: err instanceof Error ? err.message : String(err),
+          }) + "\n",
+        );
+        process.exit(1);
+      } finally {
+        console.log = origLog;
+      }
+      return;
+    }
+
+    const result = await renderJob({ job, html, outDir, rootDir: ROOT });
     console.log(`✓ rendered in ${(result.durationMs / 1000).toFixed(1)}s`);
     console.log(result.outputPath);
   },

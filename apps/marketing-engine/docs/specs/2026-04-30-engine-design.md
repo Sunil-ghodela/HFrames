@@ -204,7 +204,7 @@ marketing-engine make \
 marketing-engine make --prompt "Holi shayari reel for CraftLee, romantic tone"
 
 # From a job spec file (re-render past output)
-marketing-engine make --spec ./out/2026-04-30/craftlee/9-16/holi-shayari.json
+marketing-engine make ./out/2026-04-30/craftlee/9-16/holi-shayari.json
 ```
 
 ### 3.5 Design rationale (the non-obvious bits)
