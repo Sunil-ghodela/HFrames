@@ -59,30 +59,43 @@ git merge upstream/main      # should be conflict-free; if not, your code crosse
 2. Run a smoke render with the fixture to verify.
 3. Document slots in `template.json#slots[*].description`.
 
-## Dashboard (post-2026-05-02 Django pivot)
+## Dashboard — fully integrated into CraftLee (2026-05-02)
 
-The dashboard's server layer now lives in CraftLee's Django project at
-`CraftLee/server/apps/reels/`. Renders are dispatched via Celery and spawn a
-fresh `bun src/cli.ts make ... --json-progress` subprocess per job,
-structurally avoiding the Bun parent-process pollution that the v0.2.0
-bun server hit. The React frontend at
-`apps/marketing-engine-dashboard/src/client/` is unchanged in
-architecture; only API URLs and the progress-stream helper differ.
+The marketing-engine dashboard is now a standalone admin tool living
+entirely inside CraftLee's Django server at `CraftLee/server/apps/reels/`:
 
-Dev:
+- Backend: `apps/reels/` — REST endpoints + Celery tasks. Renders spawn a
+  fresh `bun src/cli.ts make ... --json-progress` subprocess per job
+  (engine source stays here in HFrames, invoked across the language
+  boundary).
+- Frontend: `apps/reels/dashboard/` — React + Vite source, builds to
+  `apps/reels/static/reels_dashboard/`, served same-origin by Django at
+  `/staff/reels/` behind `@staff_member_required`. **No JWT, no
+  token-paste.** Login at `/admin/`, navigate to `/staff/reels/`,
+  Django session cookie + CSRF token cover everything.
+
+Dev (production-mode flow — fastest):
 
 ```bash
 # In CraftLee repo:
 cd /path/to/CraftLee/server
+bun run --cwd apps/reels/dashboard build       # ~7s; outputs to static/
 .venv/bin/python manage.py runserver 127.0.0.1:8000
-.venv/bin/celery -A craftlee worker -l info       # in another terminal
+.venv/bin/celery -A craftlee worker -l info    # in another terminal
 
-# In HFrames repo:
-bun run --cwd apps/marketing-engine-dashboard dev   # vite at :5173, proxies /api → :8000
+# Browser:
+# 1. http://127.0.0.1:8000/admin/login/  (login as a staff user)
+# 2. http://127.0.0.1:8000/staff/reels/  (dashboard loads)
 ```
 
-The dashboard prompts for a JWT once on first load (paste from CraftLee
-admin or `manage.py shell`). It's stored in `localStorage`.
+Iterating on the dashboard UI: re-run the build (one command) and
+hard-refresh. For HMR-grade dev, `bun run --cwd apps/reels/dashboard dev`
+runs Vite at :5173 with `/api` and `/admin` proxied to :8000 — but
+session-cookie scoping makes that path more fiddly, so most edits go
+through the build flow.
+
+The HFrames repo no longer ships a dashboard package — `apps/marketing-engine-dashboard/`
+was deleted in the v0.3.1 cleanup commit.
 
 See:
 
