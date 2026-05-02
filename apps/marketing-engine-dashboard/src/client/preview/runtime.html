@@ -185,7 +185,7 @@
 
         const resolve = createClientResolver({
           brands: { [state.brandName]: state.brand },
-          assetUrl: (name) => `/api/assets/file?name=${encodeURIComponent(name)}`,
+          assetUrl: (name) => `/api/reels/assets/file?name=${encodeURIComponent(name)}`,
         });
 
         await hydrateInDocument(

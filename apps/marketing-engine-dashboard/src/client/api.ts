@@ -9,8 +9,11 @@ import type {
 } from "../shared/types.ts";
 
 function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem("jwt");
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const raw = localStorage.getItem("jwt");
+  if (!raw) return {};
+  const token = raw.replace(/\s/g, "");
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
 }
 
 async function jsonFetch<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
