@@ -59,7 +59,39 @@ git merge upstream/main      # should be conflict-free; if not, your code crosse
 2. Run a smoke render with the fixture to verify.
 3. Document slots in `template.json#slots[*].description`.
 
+## Dashboard (post-2026-05-02 Django pivot)
+
+The dashboard's server layer now lives in CraftLee's Django project at
+`CraftLee/server/apps/reels/`. Renders are dispatched via Celery and spawn a
+fresh `bun src/cli.ts make ... --json-progress` subprocess per job,
+structurally avoiding the Bun parent-process pollution that the v0.2.0
+bun server hit. The React frontend at
+`apps/marketing-engine-dashboard/src/client/` is unchanged in
+architecture; only API URLs and the progress-stream helper differ.
+
+Dev:
+
+```bash
+# In CraftLee repo:
+cd /path/to/CraftLee/server
+.venv/bin/python manage.py runserver 127.0.0.1:8000
+.venv/bin/celery -A craftlee worker -l info       # in another terminal
+
+# In HFrames repo:
+bun run --cwd apps/marketing-engine-dashboard dev   # vite at :5173, proxies /api → :8000
+```
+
+The dashboard prompts for a JWT once on first load (paste from CraftLee
+admin or `manage.py shell`). It's stored in `localStorage`.
+
+See:
+
+- `apps/marketing-engine/docs/specs/2026-05-01-django-server-design.md`
+- `apps/marketing-engine/docs/plans/2026-05-01-django-server.md`
+
 ## Plans
 
 - `apps/marketing-engine/docs/specs/2026-04-30-engine-design.md` — v1 design spec
 - `apps/marketing-engine/docs/plans/2026-04-30-phase-a-mvp.md` — Phase A implementation plan
+- `apps/marketing-engine/docs/specs/2026-05-01-django-server-design.md` — Django pivot spec
+- `apps/marketing-engine/docs/plans/2026-05-01-django-server.md` — Django pivot plan
