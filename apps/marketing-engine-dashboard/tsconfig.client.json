@@ -15,12 +15,12 @@
     "useDefineForClassFields": true,
     "allowImportingTsExtensions": true,
     "paths": {
-      "@marketing-engine/app/src/templates-list.ts": ["./src/server/engine.d.ts"],
-      "@marketing-engine/app/src/template.ts": ["./src/server/engine.d.ts"],
-      "@marketing-engine/app/src/jobs.ts": ["./src/server/engine.d.ts"],
-      "@marketing-engine/app/src/render.ts": ["./src/server/engine.d.ts"],
-      "@marketing-engine/app/src/assets.ts": ["./src/server/engine.d.ts"],
-      "@marketing-engine/app/src/asset-list.ts": ["./src/server/engine.d.ts"]
+      "@marketing-engine/app/src/templates-list.ts": ["./src/client/engine.d.ts"],
+      "@marketing-engine/app/src/template.ts": ["./src/client/engine.d.ts"],
+      "@marketing-engine/app/src/jobs.ts": ["./src/client/engine.d.ts"],
+      "@marketing-engine/app/src/render.ts": ["./src/client/engine.d.ts"],
+      "@marketing-engine/app/src/assets.ts": ["./src/client/engine.d.ts"],
+      "@marketing-engine/app/src/asset-list.ts": ["./src/client/engine.d.ts"]
     }
   },
   "include": ["src/client/**/*", "src/shared/**/*", "tests/client/**/*"]
